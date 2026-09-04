@@ -1,0 +1,25 @@
+{
+  "name": "hey-issac",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-31",
+  "compatibility_flags": [
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    // The path to the directory containing the `index.html` file to be served at `/`
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hey-issac-db",
+      "database_id": "03da1217-c3ae-45ec-b0bf-f7209c0ab39b",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

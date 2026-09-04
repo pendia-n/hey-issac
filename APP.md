@@ -1,0 +1,55 @@
+# heyIssac
+
+heyIssac is a small-business growth companion built as a Cloudflare Worker app. It gives non-technical founders a calm weekly place to understand what people can find, what is missing, and what next action is worth doing.
+
+## Why This App Exists
+
+Small businesses often know they should improve marketing, search visibility, website clarity, and public conversation, but the work arrives as noise. heyIssac turns that noise into a short list. The goal is not to automate the founder out of the loop; the goal is to make the next useful move easier to see.
+
+## What It Solves
+
+heyIssac helps users:
+
+- Check whether their public website and discovery signals are clear.
+- Rank small growth actions by usefulness.
+- Keep recommendations understandable without requiring marketing vocabulary.
+- Hold final approval before public content, edits, or promises are made.
+- Return to a weekly rhythm instead of starting from scratch each time.
+
+## How It Reduces Stress
+
+The app reduces stress by gathering scattered signals into one familiar workspace. It uses simple language, short lists, visible progress, and account recovery options so users feel oriented instead of trapped inside technical settings. The interface is designed to behave like a practical shop shelf: see what is present, notice what is missing, and choose the next item to handle.
+
+## Why It Is Unique
+
+heyIssac combines growth diagnosis, ranked action planning, public evidence, and human approval in a small-business-first interface. It is intentionally lighter than a full enterprise SEO or marketing suite, but more practical than a generic chatbot because it has account structure, recovery, workspace context, and API-first auth ready for future agentic or MCP clients.
+
+## Auth And Security Baseline
+
+The app uses username-first authentication. Username and password are the only required signup fields. Recovery email, authenticator setup, security questions, and passcode are optional recovery methods. Passwords and passcodes are hashed server-side with a Cloudflare Worker-compatible Web Crypto flow. Sessions are issued as signed JWTs in secure HttpOnly cookies.
+
+## Design Notes
+
+The current visual direction follows a user-friendly, cozy, practical style rather than a technical dashboard. Current Apple Human Interface Guidelines emphasize persistent top-level navigation, a small number of clear destinations, recognizable symbols, and layouts that adapt across compact and regular screen sizes. The mobile app navigation therefore uses symbols for the tabs while preserving accessible names.
+
+Glassmorphism and brick-like systems can be considered for future themes, but the current implementation keeps the design warmer, clearer, and easier to read for ordinary business users.
+
+## Domain Search
+
+Namecheap availability was checked for the heyIssac name on September 2, 2026. Available domains at or below 18 USD/year:
+
+- heyissac.com - 10.98 USD/year
+- heyissac.net - 11.98 USD/year
+- heyissac.org - 7.98 USD/year
+- heyissac.app - 6.98 USD/year
+- heyissac.co - 7.98 USD/year
+- hey-issac.com - 10.98 USD/year
+- hey-issac.net - 11.98 USD/year
+- hey-issac.org - 7.98 USD/year
+- hey-issac.app - 6.98 USD/year
+- hey-issac.co - 7.98 USD/year
+
+Excluded because over 18 USD/year:
+
+- heyissac.io - 34.98 USD/year
+- hey-issac.io - 34.98 USD/year

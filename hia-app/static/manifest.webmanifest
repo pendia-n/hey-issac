@@ -1,0 +1,9 @@
+{
+  "name": "heyIssac",
+  "short_name": "heyIssac",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f8f2",
+  "theme_color": "#2f7657",
+  "icons": [{"src":"/hi.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

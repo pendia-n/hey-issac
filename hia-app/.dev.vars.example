@@ -1,0 +1,4 @@
+JWT_SECRET="replace-with-a-random-secret-generated-by-openssl"
+OPENROUTER_API_KEY=""
+OPENROUTER_MODEL=""
+STRIPE_SECRET_KEY=""
