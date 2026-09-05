@@ -40,4 +40,20 @@ describe("Hia app Worker API", () => {
 		const body = await response.json() as { questions: { key: string; question: string }[] };
 		expect(body.questions.length).toBeGreaterThanOrEqual(10);
 	});
+
+	it("exposes the model and add-on catalog without exposing secrets", async () => {
+		const response = await SELF.fetch("http://example.com/api/catalog");
+		expect(response.status).toBe(200);
+		const body = await response.json() as { plans: { starter: { default: string }; partner: { max: string } }; topUpMinimumCents: number };
+		expect(body.plans.starter.default).toBe("qwen/qwen3.8-flash");
+		expect(body.plans.partner.max).toBe("openai/gpt-6-astra-pro");
+		expect(body.topUpMinimumCents).toBe(300);
+	});
+
+	it("protects run, billing, and search boundaries behind the session", async () => {
+		for (const path of ["/api/billing", "/api/search?q=hello", "/api/runs/not-a-run"]) {
+			const response = await SELF.fetch(`http://example.com${path}`);
+			expect(response.status).toBe(401);
+		}
+	});
 });

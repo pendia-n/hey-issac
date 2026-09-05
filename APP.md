@@ -28,6 +28,14 @@ heyIssac combines growth diagnosis, ranked action planning, public evidence, and
 
 The app uses username-first authentication. Username and password are the only required signup fields. Recovery email, authenticator setup, security questions, and passcode are optional recovery methods. Passwords and passcodes are hashed server-side with a Cloudflare Worker-compatible Web Crypto flow. Sessions are issued as signed JWTs in secure HttpOnly cookies.
 
+## Agent and billing readiness
+
+The Worker now exposes an API-first run loop. A run is owned by the authenticated workspace and receives a random `run_id`; every provider call receives a child `request_id`, with provider request/generation IDs, token usage, provider cost, and status stored in D1. Evidence is stored as run-scoped snapshots, and result retrieval always filters by both `run_id` and workspace membership.
+
+The default model is included in the selected plan. `push` and `max` are usage-priced upgrades using the model catalog in `src/index.ts`. Stripe Checkout handles top-ups of at least $3, and a signature-verified webhook credits the workspace wallet exactly once. Provider usage is measured from the OpenRouter response, and the server applies the 1.4 multiplier before recording the charge. The browser never calculates or authorizes a charge.
+
+Required integration secrets before live agent runs: `OPENROUTER_API_KEY`, one search provider key (`TAVILY_API_KEY` or `BRAVE_SEARCH_API_KEY`), and `FIRECRAWL_API_KEY` for page reading. Required payment secrets before top-ups: `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Without them, the app keeps auth and read-only catalog/health behavior available and reports the missing capability clearly.
+
 ## Design Notes
 
 The current visual direction follows a user-friendly, cozy, practical style rather than a technical dashboard. Current Apple Human Interface Guidelines emphasize persistent top-level navigation, a small number of clear destinations, recognizable symbols, and layouts that adapt across compact and regular screen sizes. The mobile app navigation therefore uses symbols for the tabs while preserving accessible names.
