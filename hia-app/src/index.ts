@@ -26,10 +26,13 @@ interface AppEnv {
 	TAVILY_API_KEY?: string;
 	BRAVE_SEARCH_API_KEY?: string;
 	FIRECRAWL_API_KEY?: string;
+	STRIPE_STARTER_PRICE_ID?: string;
+	STRIPE_STUDIO_PRICE_ID?: string;
+	STRIPE_PARTNER_PRICE_ID?: string;
 }
 
 const app = new Hono<{ Bindings: AppEnv }>();
-app.use('*', async (c, next) => { await next(); c.header('X-Content-Type-Options', 'nosniff'); c.header('Referrer-Policy', 'strict-origin-when-cross-origin'); c.header('X-Frame-Options', 'DENY'); c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()'); });
+app.use('*', async (c, next) => { await next(); c.header('X-Content-Type-Options', 'nosniff'); c.header('Referrer-Policy', 'strict-origin-when-cross-origin'); c.header('X-Frame-Options', 'DENY'); c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()'); c.header('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"); });
 app.get('/api/health', (c) => c.json({ ok: true, service: 'heyIssac' }));
 const apiError = (c: any, message: string, status = 400) => c.json({ error: message }, status);
 const securityQuestions = [
@@ -50,6 +53,7 @@ const securityQuestions = [
 	{ key: 'first_username', question: 'What was the first username or screen name you used?' },
 ];
 type SecurityAnswer = { questionKey?: string; answer?: string };
+type RecoverySetup = { recoveryEmail?: string; passcode?: string; securityAnswers?: SecurityAnswer[]; totpSecret?: string; totpCode?: string };
 const validQuestionKeys = new Set(securityQuestions.map((item) => item.key));
 const MODEL_CATALOG = {
 	starter: { default: 'qwen/qwen3.8-flash', push: ['stepfun/step-3.5-flash', 'writer/palmyra-x5', 'arcee-ai/trinity-large-thinking'], max: 'minimax/minimax-m3:batch' },
@@ -62,25 +66,28 @@ const tierNames = new Set<Tier>(['starter', 'studio', 'partner']);
 const addonNames = new Set<Addon>(['default', 'push', 'max']);
 const providerName = (env: AppEnv) => env.SEARCH_PROVIDER?.toLowerCase() || (env.TAVILY_API_KEY ? 'tavily' : env.BRAVE_SEARCH_API_KEY ? 'brave' : 'none');
 const jsonText = (value: unknown) => JSON.stringify(value ?? {});
+const readJson = (value: unknown) => { if (typeof value !== 'string' || !value) return null; try { return JSON.parse(value); } catch { return null; } };
 const centsFromUsd = (value: number) => Math.max(0, Math.ceil(value * 100));
 const getWorkspaceForUser = (db: D1Database, userId: string) => db.prepare('SELECT workspace_id FROM workspace_members WHERE user_id = ? ORDER BY workspace_id LIMIT 1').bind(userId).first<{ workspace_id: string }>();
+const getWorkspaceContext = (db: D1Database, userId: string) => db.prepare('SELECT w.id, w.plan, w.subscription_status FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id WHERE m.user_id = ? ORDER BY w.created_at LIMIT 1').bind(userId).first<{ id: string; plan: string; subscription_status: string }>();
+const planRank = (value: string) => ({ starter: 1, studio: 2, partner: 3 } as Record<string, number>)[value] ?? 1;
 const validHttpUrl = (value: string) => { try { const url = new URL(value); return url.protocol === 'http:' || url.protocol === 'https:'; } catch { return false; } };
 async function sha256(value: string) { return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)))).map((byte) => byte.toString(16).padStart(2, '0')).join(''); }
 function modelFor(tier: Tier, addon: Addon) { const selected = MODEL_CATALOG[tier][addon]; return Array.isArray(selected) ? selected[0] : selected; }
-function safeSearchResult(value: any) { return { title: String(value.title ?? value.name ?? '').slice(0, 300), url: String(value.url ?? value.link ?? ''), excerpt: String(value.content ?? value.description ?? value.snippet ?? '').slice(0, 1200) }; }
+function safeSearchResult(value: any, index = 0) { return { title: String(value.title ?? value.name ?? '').slice(0, 300), url: String(value.url ?? value.link ?? ''), excerpt: String(value.content ?? value.description ?? value.snippet ?? '').slice(0, 1200), position: index + 1 }; }
 async function searchWeb(env: AppEnv, query: string) {
 	const provider = providerName(env);
 	if (provider === 'tavily' && env.TAVILY_API_KEY) {
 		const response = await fetch('https://api.tavily.com/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: env.TAVILY_API_KEY, query, max_results: 5, include_answer: false }) });
 		if (!response.ok) throw new Error(`search_${response.status}`);
 		const body = await response.json() as any;
-		return { provider, results: (body.results ?? []).map(safeSearchResult).filter((item: any) => validHttpUrl(item.url)) };
+		return { provider, results: (body.results ?? []).map((item: any, index: number) => safeSearchResult(item, index)).filter((item: any) => validHttpUrl(item.url)) };
 	}
 	if (provider === 'brave' && env.BRAVE_SEARCH_API_KEY) {
 		const response = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=5`, { headers: { Accept: 'application/json', 'X-Subscription-Token': env.BRAVE_SEARCH_API_KEY } });
 		if (!response.ok) throw new Error(`search_${response.status}`);
 		const body = await response.json() as any;
-		return { provider, results: (body.web?.results ?? []).map(safeSearchResult).filter((item: any) => validHttpUrl(item.url)) };
+		return { provider, results: (body.web?.results ?? []).map((item: any, index: number) => safeSearchResult(item, index)).filter((item: any) => validHttpUrl(item.url)) };
 	}
 	return { provider: 'none', results: [] };
 }
@@ -98,12 +105,52 @@ async function callOpenRouter(env: AppEnv, model: string, messages: { role: stri
 	if (!response.ok) throw new Error(`openrouter_${response.status}`);
 	return { id: String(body.id ?? ''), requestId: response.headers.get('x-request-id') ?? '', text: String(body.choices?.[0]?.message?.content ?? ''), cost: Number(body.usage?.cost ?? 0), inputTokens: Number(body.usage?.prompt_tokens ?? 0), outputTokens: Number(body.usage?.completion_tokens ?? 0) };
 }
+const MAX_CRAWL_PAGES = 5;
+const MAX_RUNS_PER_DAY = 20;
+async function crawlSite(env: AppEnv, siteUrl: string) {
+	const origin = new URL(siteUrl); const paths = Array.from(new Set([origin.pathname || '/', '/', '/about', '/services', '/contact', '/pricing'])).slice(0, MAX_CRAWL_PAGES); const pages: { url: string; title: string; excerpt: string; provider: string }[] = [];
+	for (const path of paths) { try { const page = await crawlUrl(env, new URL(path, origin).toString()); if (page.provider !== 'none') pages.push({ url: new URL(path, origin).toString(), title: page.title, excerpt: page.excerpt, provider: page.provider }); } catch { /* Individual pages may be unavailable; the run can still use search evidence. */ } }
+	return pages;
+}
+function parseAgentResult(text: string) {
+	const clean = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim(); let parsed: any;
+	try { parsed = JSON.parse(clean); } catch { throw new Error('invalid_model_output'); }
+	if (!parsed || typeof parsed.summary !== 'string' || !Array.isArray(parsed.findings) || !Array.isArray(parsed.actions)) throw new Error('invalid_model_output');
+	const geo = parsed.geo && typeof parsed.geo === 'object' ? { visibility: String(parsed.geo.visibility ?? 'not_measured').slice(0, 40), notes: String(parsed.geo.notes ?? '').slice(0, 1000), gaps: Array.isArray(parsed.geo.gaps) ? parsed.geo.gaps.slice(0, 10).map((item: unknown) => String(item).slice(0, 240)) : [] } : { visibility: 'not_measured', notes: '', gaps: [] };
+	return { summary: parsed.summary.slice(0, 2000), score: Number.isFinite(Number(parsed.score)) ? Math.max(0, Math.min(100, Number(parsed.score))) : null, geo, findings: parsed.findings.slice(0, 20).map((item: any) => ({ title: String(item.title ?? '').slice(0, 240), diagnosis: String(item.diagnosis ?? '').slice(0, 1200), priority: String(item.priority ?? 'medium'), confidence: Math.max(0, Math.min(1, Number(item.confidence ?? 0.5))), evidenceIndexes: Array.isArray(item.evidenceIndexes) ? item.evidenceIndexes.slice(0, 10).map(Number).filter(Number.isFinite) : [] })), actions: parsed.actions.slice(0, 20).map((item: any) => ({ title: String(item.title ?? '').slice(0, 240), rationale: String(item.rationale ?? '').slice(0, 1200), type: String(item.type ?? 'growth').slice(0, 80), priority: String(item.priority ?? 'medium').slice(0, 40), draft: item.draft ? String(item.draft).slice(0, 3000) : null, approvalRequired: item.approvalRequired !== false })) };
+}
+async function trackedModelRequest(db: D1Database, env: AppEnv, runId: string, workspaceId: string, model: string, stage: string, messages: { role: string; content: string }[]) {
+	const requestId = randomId(); const requestKey = `${runId}:${stage}`; const now = new Date().toISOString(); await db.prepare('INSERT INTO run_requests (id, run_id, workspace_id, request_key, provider, model, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(requestId, runId, workspaceId, requestKey, 'openrouter', model, 'started', now).run();
+	try { const result = await callOpenRouter(env, model, messages); await db.prepare('UPDATE run_requests SET status = ?, provider_request_id = ?, provider_generation_id = ?, provider_cost_usd = ?, input_tokens = ?, output_tokens = ?, completed_at = ? WHERE id = ? AND run_id = ? AND workspace_id = ?').bind('completed', result.requestId, result.id, result.cost, result.inputTokens, result.outputTokens, new Date().toISOString(), requestId, runId, workspaceId).run(); return result; } catch (cause) { await db.prepare('UPDATE run_requests SET status = ?, error = ?, completed_at = ? WHERE id = ? AND run_id = ? AND workspace_id = ?').bind('failed', cause instanceof Error ? cause.message : 'provider_failed', new Date().toISOString(), requestId, runId, workspaceId).run(); throw cause; }
+}
+async function validatedModelStage(db: D1Database, env: AppEnv, runId: string, workspaceId: string, model: string, stage: string, prompt: string) {
+	const result = await trackedModelRequest(db, env, runId, workspaceId, model, stage, [{ role: 'user', content: prompt }]);
+	try { return { result, structured: parseAgentResult(result.text) }; } catch {
+		const repair = await trackedModelRequest(db, env, runId, workspaceId, model, `${stage}_repair`, [{ role: 'user', content: `Return valid JSON only. Required keys: summary string, score number or null, findings array, actions array. Repair this response without inventing evidence:\n${result.text}` }]);
+		return { result: repair, structured: parseAgentResult(repair.text) };
+	}
+}
 const getUserByUsername = (db: D1Database, username: string) => db.prepare('SELECT id, username, password_hash, role, recovery_email, totp_secret, passcode_hash FROM users WHERE username = ?').bind(username).first<{ id: string; username: string; password_hash: string; role: string; recovery_email?: string | null; totp_secret?: string | null; passcode_hash?: string | null }>();
 const getSession = async (c: any) => {
 	const session = await readSession(c.req.raw, c.env.JWT_SECRET);
-	return session;
+	if (session) return session;
+	const authorization = c.req.header('Authorization') ?? '';
+	if (!authorization.startsWith('Bearer ')) return null;
+	const rawToken = authorization.slice(7).trim(); if (rawToken.length < 20 || rawToken.length > 300) return null;
+	const tokenHash = await sha256(rawToken); const db = c.env.DB as D1Database;
+	const token = await db.prepare('SELECT t.id, t.user_id, t.workspace_id, t.expires_at, u.username, u.role FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = ? AND t.revoked_at IS NULL').bind(tokenHash).first<{ id: string; user_id: string; workspace_id: string; expires_at?: string | null; username: string; role: string }>();
+	if (!token || (token.expires_at && token.expires_at <= new Date().toISOString())) return null;
+	await db.prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?').bind(new Date().toISOString(), token.id).run();
+	return { sub: token.user_id, username: token.username, role: token.role, workspaceId: token.workspace_id, iat: 0, exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS };
 };
-async function applyRecoverySetup(db: D1Database, userId: string, body: { recoveryEmail?: string; passcode?: string; securityAnswers?: SecurityAnswer[]; totpSecret?: string; totpCode?: string }) {
+async function validateRecoverySetup(body: RecoverySetup) {
+	if (body.recoveryEmail !== undefined) { const email = body.recoveryEmail.trim().toLowerCase(); if (email && !validRecoveryEmail(email)) throw new Error('email'); }
+	if (body.passcode !== undefined) { const passcode = body.passcode.trim(); if (passcode && !validPasscode(passcode)) throw new Error('passcode'); }
+	if (body.totpSecret !== undefined || body.totpCode !== undefined) { const secret = body.totpSecret?.trim().replace(/\s+/g, '').toUpperCase() ?? ''; const code = body.totpCode?.trim() ?? ''; if (secret && !(await verifyTotp(secret, code))) throw new Error('totp'); }
+	if (body.securityAnswers !== undefined) { const answers = body.securityAnswers.filter((item) => item.questionKey || item.answer); const keys = answers.map((item) => item.questionKey); const normalized = answers.map((item) => normalizeSecurityAnswer(item.answer ?? '')); if (answers.length && (answers.length < 2 || answers.length > 3 || new Set(keys).size !== answers.length || new Set(normalized).size !== answers.length || answers.some((item) => !item.questionKey || !validQuestionKeys.has(item.questionKey) || !normalizeSecurityAnswer(item.answer ?? '')))) throw new Error('security_answers'); }
+}
+async function applyRecoverySetup(db: D1Database, userId: string, body: RecoverySetup) {
+	await validateRecoverySetup(body);
 	const updates: string[] = [];
 	const bindings: unknown[] = [];
 	if (body.recoveryEmail !== undefined) {
@@ -136,7 +183,7 @@ async function applyRecoverySetup(db: D1Database, userId: string, body: { recove
 	}
 }
 app.get('/api/auth/me', async (c) => {
-	const session = await readSession(c.req.raw, c.env.JWT_SECRET);
+	const session = await getSession(c);
 	return session ? c.json({ user: { id: session.sub, username: session.username, role: session.role } }) : apiError(c, 'Sign in required', 401);
 });
 app.get('/api/auth/username-availability', async (c) => {
@@ -164,8 +211,9 @@ app.post('/api/auth/register', async (c) => {
 		const workspaceId = randomId();
 		const now = new Date().toISOString();
 		const encodedPassword = await hashPassword(password);
+		await validateRecoverySetup(body);
 		await c.env.DB.prepare('INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)').bind(id, username, encodedPassword, 'owner', now).run();
-		await c.env.DB.prepare('INSERT INTO workspaces (id, owner_user_id, name, plan, created_at) VALUES (?, ?, ?, ?, ?)').bind(workspaceId, id, 'My workspace', 'free', now).run();
+		await c.env.DB.prepare('INSERT INTO workspaces (id, owner_user_id, name, plan, created_at) VALUES (?, ?, ?, ?, ?)').bind(workspaceId, id, 'My workspace', 'starter', now).run();
 		await c.env.DB.prepare('INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)').bind(workspaceId, id, 'owner').run();
 		await c.env.DB.prepare('INSERT INTO wallets (workspace_id, balance_cents, updated_at) VALUES (?, 0, ?)').bind(workspaceId, now).run();
 		await applyRecoverySetup(c.env.DB, id, body);
@@ -241,7 +289,66 @@ app.post('/api/auth/security/setup', async (c) => {
 		return apiError(c, 'Check your recovery details and try again.');
 	}
 });
+app.get('/api/profile', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401);
+	const profile = await c.env.DB.prepare('SELECT id, username, business_name, brand_voice, created_at FROM users WHERE id = ?').bind(session.sub).first();
+	return profile ? c.json({ profile }) : apiError(c, 'Profile not found.', 404);
+});
+app.patch('/api/profile', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401);
+	const body = await c.req.json<{ businessName?: string; brandVoice?: string }>(); const businessName = body.businessName?.trim() ?? ''; const brandVoice = body.brandVoice?.trim() ?? '';
+	if (businessName.length > 120 || brandVoice.length > 240) return apiError(c, 'Profile details are too long.');
+	await c.env.DB.prepare('UPDATE users SET business_name = ?, brand_voice = ?, updated_at = ? WHERE id = ?').bind(businessName || null, brandVoice || null, new Date().toISOString(), session.sub).run();
+	return c.json({ ok: true });
+});
+app.get('/api/security/status', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const user = await c.env.DB.prepare('SELECT recovery_email, totp_secret, passcode_hash FROM users WHERE id = ?').bind(session.sub).first<{ recovery_email?: string | null; totp_secret?: string | null; passcode_hash?: string | null }>(); const answers = await c.env.DB.prepare('SELECT COUNT(*) AS total FROM security_answers WHERE user_id = ?').bind(session.sub).first<{ total: number }>(); return c.json({ email: !!user?.recovery_email, totp: !!user?.totp_secret, passcode: !!user?.passcode_hash, securityQuestions: answers?.total ?? 0 });
+});
+app.get('/api/auth/tokens', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401);
+	const rows = await c.env.DB.prepare('SELECT id, name, expires_at, revoked_at, created_at, last_used_at FROM api_tokens WHERE user_id = ? AND revoked_at IS NULL ORDER BY created_at DESC').bind(session.sub).all(); return c.json({ tokens: rows.results });
+});
+app.post('/api/auth/tokens', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401);
+	const body = await c.req.json<{ name?: string; expiresInDays?: number }>(); const name = body.name?.trim() || 'Agent access'; if (name.length > 80) return apiError(c, 'Token name is too long.');
+	const workspace = await getWorkspaceForUser(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404);
+	const existing = await c.env.DB.prepare('SELECT COUNT(*) AS total FROM api_tokens WHERE user_id = ? AND revoked_at IS NULL').bind(session.sub).first<{ total: number }>(); if ((existing?.total ?? 0) >= 10) return apiError(c, 'You can keep up to 10 active agent tokens.', 429);
+	const token = `hia_${randomId()}${randomId()}`; const expiresInDays = Math.min(365, Math.max(1, Math.floor(body.expiresInDays ?? 90))); const expiresAt = new Date(Date.now() + expiresInDays * 86400000).toISOString(); const now = new Date().toISOString();
+	await c.env.DB.prepare('INSERT INTO api_tokens (id, user_id, workspace_id, name, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(randomId(), session.sub, workspace.workspace_id, name, await sha256(token), expiresAt, now).run();
+	return c.json({ token, name, expiresAt }, 201);
+});
+app.delete('/api/auth/tokens/:id', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const result = await c.env.DB.prepare('UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL').bind(new Date().toISOString(), c.req.param('id'), session.sub).run(); return result.meta.changes === 1 ? c.json({ ok: true }) : apiError(c, 'Token not found.', 404);
+});
+app.get('/api/projects', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const workspace = await getWorkspaceForUser(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404); const projects = await c.env.DB.prepare('SELECT id, site_url, product_category, icp, target_geo, created_at FROM projects WHERE workspace_id = ? ORDER BY created_at DESC').bind(workspace.workspace_id).all(); return c.json({ projects: projects.results });
+});
+app.post('/api/projects', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const workspace = await getWorkspaceForUser(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404);
+	const body = await c.req.json<{ siteUrl?: string; productCategory?: string; icp?: string; targetGeo?: string }>(); const siteUrl = body.siteUrl?.trim() ?? ''; if (!validHttpUrl(siteUrl) || siteUrl.length > 500) return apiError(c, 'Enter a valid public website.');
+	const id = randomId(); await c.env.DB.prepare('INSERT INTO projects (id, workspace_id, site_url, product_category, icp, target_geo, competitors_json, brand_voice_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(id, workspace.workspace_id, siteUrl, body.productCategory?.trim().slice(0, 120) || null, body.icp?.trim().slice(0, 240) || null, body.targetGeo?.trim().slice(0, 120) || null, '[]', '{}', new Date().toISOString()).run(); return c.json({ project: { id, siteUrl } }, 201);
+});
+app.patch('/api/projects/:id', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const workspace = await getWorkspaceForUser(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404); const body = await c.req.json<{ productCategory?: string; icp?: string; targetGeo?: string }>(); const result = await c.env.DB.prepare('UPDATE projects SET product_category = ?, icp = ?, target_geo = ? WHERE id = ? AND workspace_id = ?').bind(body.productCategory?.trim().slice(0, 120) || null, body.icp?.trim().slice(0, 240) || null, body.targetGeo?.trim().slice(0, 120) || null, c.req.param('id'), workspace.workspace_id).run(); return result.meta.changes === 1 ? c.json({ ok: true }) : apiError(c, 'Project not found.', 404);
+});
+app.delete('/api/projects/:id', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const workspace = await getWorkspaceForUser(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404); const result = await c.env.DB.prepare('DELETE FROM projects WHERE id = ? AND workspace_id = ?').bind(c.req.param('id'), workspace.workspace_id).run(); return result.meta.changes === 1 ? c.json({ ok: true }) : apiError(c, 'Project not found.', 404);
+});
+app.get('/api/runs', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const workspace = await getWorkspaceForUser(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404); const limit = Math.min(50, Math.max(1, Number(c.req.query('limit') ?? 20))); const runs = await c.env.DB.prepare(`SELECT id, site_url, objective, addon, tier, model, status, result_json, provider_cost_usd, charged_cents, error, created_at, completed_at FROM runs WHERE workspace_id = ? ORDER BY created_at DESC LIMIT ${limit}`).bind(workspace.workspace_id).all<any>(); return c.json({ runs: runs.results.map((run) => ({ ...run, result: readJson(run.result_json) })) });
+});
+app.get('/api/actions', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const workspace = await getWorkspaceForUser(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404); const status = c.req.query('status'); const query = status ? 'SELECT a.* FROM actions a JOIN projects p ON p.id = a.project_id WHERE p.workspace_id = ? AND a.status = ? ORDER BY a.score DESC, a.created_at DESC LIMIT 100' : 'SELECT a.* FROM actions a JOIN projects p ON p.id = a.project_id WHERE p.workspace_id = ? ORDER BY a.created_at DESC LIMIT 100'; const actionsRows = status ? await c.env.DB.prepare(query).bind(workspace.workspace_id, status).all() : await c.env.DB.prepare(query).bind(workspace.workspace_id).all(); return c.json({ actions: actionsRows.results });
+});
+app.patch('/api/actions/:id', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const workspace = await getWorkspaceForUser(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404); const body = await c.req.json<{ status?: string }>(); if (!body.status || !['pending', 'approved', 'dismissed', 'completed', 'published'].includes(body.status)) return apiError(c, 'Invalid action status.'); const result = await c.env.DB.prepare('UPDATE actions SET status = ? WHERE id = ? AND project_id IN (SELECT id FROM projects WHERE workspace_id = ?)').bind(body.status, c.req.param('id'), workspace.workspace_id).run(); return result.meta.changes === 1 ? c.json({ ok: true }) : apiError(c, 'Action not found.', 404);
+});
 app.get('/api/catalog', (c) => c.json({ plans: { starter: { label: 'Starter', default: MODEL_CATALOG.starter.default, push: MODEL_CATALOG.starter.push, max: MODEL_CATALOG.starter.max }, studio: { label: 'Studio', default: MODEL_CATALOG.studio.default, push: MODEL_CATALOG.studio.push, max: MODEL_CATALOG.studio.max }, partner: { label: 'Partner', default: MODEL_CATALOG.partner.default, push: MODEL_CATALOG.partner.push, max: MODEL_CATALOG.partner.max } }, addons: { push: 'Usage-priced model upgrade', max: 'Usage-priced highest-capability upgrade' }, topUpMinimumCents: 300 }));
+app.get('/api/workspace', async (c) => { const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const workspace = await c.env.DB.prepare('SELECT id, name, plan, subscription_status, current_period_end FROM workspaces WHERE id IN (SELECT workspace_id FROM workspace_members WHERE user_id = ?) ORDER BY created_at LIMIT 1').bind(session.sub).first(); return workspace ? c.json({ workspace }) : apiError(c, 'Workspace not found.', 404); });
+app.post('/api/billing/subscribe', async (c) => {
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const workspace = await getWorkspaceContext(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404); const body = await c.req.json<{ plan?: string }>(); const plan = body.plan as Tier; const priceId = plan === 'starter' ? c.env.STRIPE_STARTER_PRICE_ID : plan === 'studio' ? c.env.STRIPE_STUDIO_PRICE_ID : plan === 'partner' ? c.env.STRIPE_PARTNER_PRICE_ID : undefined; if (!priceId) return apiError(c, 'Choose a valid plan.', 400); if (!c.env.STRIPE_SECRET_KEY) return apiError(c, 'Subscription checkout is not available.', 503);
+	const params = new URLSearchParams({ mode: 'subscription', success_url: 'https://hey-issac.pendia-community.workers.dev/?subscription=success', cancel_url: 'https://hey-issac.pendia-community.workers.dev/?subscription=cancelled', 'line_items[0][price]': priceId, 'line_items[0][quantity]': '1', 'metadata[workspace_id]': workspace.id, 'metadata[plan]': plan, integration_identifier: `heyissac_${randomId().slice(0, 8)}` }); const response = await fetch('https://api.stripe.com/v1/checkout/sessions', { method: 'POST', headers: { Authorization: `Bearer ${c.env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: params }); const result = await response.json() as any; if (!response.ok) return apiError(c, 'Could not start subscription.', 502); return c.json({ checkoutUrl: result.url, checkoutSessionId: result.id });
+});
 app.get('/api/billing', async (c) => {
 	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401);
 	const workspace = await getWorkspaceForUser(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404);
@@ -266,11 +373,15 @@ app.post('/api/stripe/webhook', async (c) => {
 	if (!timestamp || !v1 || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return apiError(c, 'Invalid webhook.', 400);
 	const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(c.env.STRIPE_WEBHOOK_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']); const valid = await crypto.subtle.verify('HMAC', key, Uint8Array.from(v1.match(/.{1,2}/g)?.map((x) => parseInt(x, 16)) ?? []), new TextEncoder().encode(`${timestamp}.${raw}`));
 	if (!valid) return apiError(c, 'Invalid webhook.', 400);
-	const event = JSON.parse(raw) as any; if (event.type !== 'checkout.session.completed') return c.json({ received: true });
-	const object = event.data?.object; const workspaceId = object?.metadata?.workspace_id; const amount = Number(object?.metadata?.amount_cents ?? object?.amount_total ?? 0); if (!workspaceId || amount < 300) return c.json({ received: true });
+	const event = JSON.parse(raw) as any; const object = event.data?.object; const workspaceId = object?.metadata?.workspace_id;
+	if (event.type === 'checkout.session.completed' && object?.mode === 'subscription' && workspaceId && tierNames.has(object.metadata?.plan)) { await c.env.DB.prepare('UPDATE workspaces SET plan = ?, stripe_customer_id = ?, stripe_subscription_id = ?, subscription_status = ? WHERE id = ?').bind(object.metadata.plan, object.customer ?? null, object.subscription ?? null, 'active', workspaceId).run(); return c.json({ received: true }); }
+	if (event.type === 'customer.subscription.deleted' && object?.id) { await c.env.DB.prepare("UPDATE workspaces SET subscription_status = 'canceled' WHERE stripe_subscription_id = ?").bind(object.id).run(); return c.json({ received: true }); }
+	if (event.type === 'customer.subscription.updated' && object?.id) { await c.env.DB.prepare('UPDATE workspaces SET subscription_status = ?, current_period_end = ? WHERE stripe_subscription_id = ?').bind(String(object.status ?? 'unknown'), object.current_period_end ? new Date(Number(object.current_period_end) * 1000).toISOString() : null, object.id).run(); return c.json({ received: true }); }
+	if (event.type !== 'checkout.session.completed') return c.json({ received: true });
+	const amount = Number(object?.metadata?.amount_cents ?? object?.amount_total ?? 0); if (!workspaceId || amount < 300) return c.json({ received: true });
 	const now = new Date().toISOString(); const transactionId = `stripe_${String(event.id)}`; const existing = await c.env.DB.prepare('SELECT id FROM wallet_transactions WHERE idempotency_key = ?').bind(transactionId).first(); if (existing) return c.json({ received: true, duplicate: true });
-	const wallet = await c.env.DB.prepare('SELECT balance_cents FROM wallets WHERE workspace_id = ?').bind(workspaceId).first<{ balance_cents: number }>(); const balance = (wallet?.balance_cents ?? 0) + amount;
-	await c.env.DB.batch([c.env.DB.prepare('INSERT INTO wallets (workspace_id, balance_cents, updated_at) VALUES (?, ?, ?) ON CONFLICT(workspace_id) DO UPDATE SET balance_cents = excluded.balance_cents, updated_at = excluded.updated_at').bind(workspaceId, balance, now), c.env.DB.prepare('INSERT INTO wallet_transactions (id, workspace_id, kind, amount_cents, balance_after_cents, idempotency_key, stripe_checkout_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(transactionId, workspaceId, 'top_up', amount, balance, transactionId, object.id, now)]);
+	const creditBatch = await c.env.DB.batch([c.env.DB.prepare('INSERT INTO wallets (workspace_id, balance_cents, updated_at) VALUES (?, ?, ?) ON CONFLICT(workspace_id) DO UPDATE SET balance_cents = wallets.balance_cents + excluded.balance_cents, updated_at = excluded.updated_at').bind(workspaceId, amount, now), c.env.DB.prepare("INSERT INTO wallet_transactions (id, workspace_id, kind, amount_cents, balance_after_cents, idempotency_key, stripe_checkout_id, created_at) SELECT ?, ?, 'top_up', ?, balance_cents, ?, ?, ? FROM wallets WHERE workspace_id = ? AND changes() = 1").bind(transactionId, workspaceId, amount, transactionId, object.id, now, workspaceId)]);
+	if (creditBatch[1].meta.changes !== 1) return apiError(c, 'Balance was not credited.', 500);
 	return c.json({ received: true });
 });
 app.get('/api/search', async (c) => {
@@ -283,36 +394,41 @@ app.get('/api/runs/:id', async (c) => {
 	const run = await c.env.DB.prepare('SELECT id, site_url, objective, addon, tier, model, status, result_json, provider_cost_usd, charged_cents, error, created_at, completed_at FROM runs WHERE id = ? AND workspace_id = ?').bind(c.req.param('id'), workspace.workspace_id).first<any>(); if (!run) return apiError(c, 'Run not found.', 404);
 	const requests = await c.env.DB.prepare('SELECT id, provider, model, provider_request_id, provider_generation_id, status, provider_cost_usd, input_tokens, output_tokens, created_at, completed_at FROM run_requests WHERE run_id = ? AND workspace_id = ? ORDER BY created_at').bind(run.id, workspace.workspace_id).all();
 	const evidence = await c.env.DB.prepare('SELECT provider, query, url, title, excerpt, fetched_at FROM evidence_snapshots WHERE run_id = ? AND workspace_id = ? ORDER BY fetched_at').bind(run.id, workspace.workspace_id).all();
-	return c.json({ run: { ...run, result: run.result_json ? JSON.parse(run.result_json) : null }, requests: requests.results, evidence: evidence.results });
+	return c.json({ run: { ...run, result: readJson(run.result_json) }, requests: requests.results, evidence: evidence.results });
 });
 app.post('/api/runs', async (c) => {
-	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const workspace = await getWorkspaceForUser(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404);
-	const body = await c.req.json<{ siteUrl?: string; objective?: string; tier?: string; addon?: string; idempotencyKey?: string }>(); const siteUrl = body.siteUrl?.trim() ?? ''; const objective = body.objective?.trim() ?? 'Find the most useful next growth actions.'; const tier = (body.tier ?? 'starter') as Tier; const addon = (body.addon ?? 'default') as Addon; const idempotencyKey = body.idempotencyKey?.trim() || randomId();
-	if (!validHttpUrl(siteUrl) || objective.length < 3 || objective.length > 500 || !tierNames.has(tier) || !addonNames.has(addon)) return apiError(c, 'Add a valid website, objective, plan, and add-on.');
-	const duplicate = await c.env.DB.prepare('SELECT id, status FROM runs WHERE idempotency_key = ? AND workspace_id = ?').bind(idempotencyKey, workspace.workspace_id).first<{ id: string; status: string }>(); if (duplicate) return c.json({ runId: duplicate.id, status: duplicate.status, duplicate: true });
-	const runId = randomId(); const projectId = randomId(); const model = modelFor(tier, addon); const now = new Date().toISOString();
-	await c.env.DB.batch([
-		c.env.DB.prepare('INSERT INTO projects (id, workspace_id, site_url, product_category, icp, target_geo, competitors_json, brand_voice_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(projectId, workspace.workspace_id, siteUrl, null, null, null, '[]', '{}', now),
-		c.env.DB.prepare('INSERT INTO runs (id, workspace_id, project_id, site_url, objective, addon, tier, model, status, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(runId, workspace.workspace_id, projectId, siteUrl, objective, addon, tier, model, 'running', idempotencyKey, now),
-		c.env.DB.prepare('INSERT INTO scans (id, project_id, status, scan_type, provider_cost_json, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(runId, projectId, 'running', 'agent_diagnosis', '{}', now),
-	]);
-	try {
-		const search = await searchWeb(c.env, `${siteUrl} ${objective}`); const crawl = await crawlUrl(c.env, siteUrl); const sources = [...search.results, ...(crawl.provider !== 'none' ? [{ title: crawl.title, url: siteUrl, excerpt: crawl.excerpt }] : [])].filter((item, index, all) => item.url && all.findIndex((other) => other.url === item.url) === index).slice(0, 8);
-		for (const source of sources) await c.env.DB.prepare('INSERT INTO evidence_snapshots (id, run_id, workspace_id, provider, query, url, title, excerpt, content_hash, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(randomId(), runId, workspace.workspace_id, search.provider, `${siteUrl} ${objective}`, source.url, source.title, source.excerpt, await sha256(`${source.url}|${source.excerpt}`), new Date().toISOString()).run();
-		const context = sources.map((source, index) => `[${index + 1}] ${source.title}\n${source.url}\n${source.excerpt}`).join('\n\n'); const prompt = `You are heyIssac, a practical growth diagnosis agent. Analyze this website and public evidence. Return JSON only with keys summary, score (0-100), findings (array of {title, diagnosis, priority, confidence, evidenceIndexes}), actions (array of {title, rationale, type, priority, draft, approvalRequired}). Do not invent facts; cite evidenceIndexes. Website: ${siteUrl}\nObjective: ${objective}\nEvidence:\n${context || 'No search provider is configured. Say that evidence is unavailable and give only clearly labeled setup actions.'}`;
-		const requestId = randomId(); await c.env.DB.prepare('INSERT INTO run_requests (id, run_id, workspace_id, request_key, provider, model, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(requestId, runId, workspace.workspace_id, `${runId}:analysis`, 'openrouter', model, 'started', now).run();
-		const result = await callOpenRouter(c.env, model, [{ role: 'user', content: prompt }]); const providerCost = Number.isFinite(result.cost) ? result.cost : 0; await c.env.DB.prepare('UPDATE run_requests SET status = ?, provider_request_id = ?, provider_generation_id = ?, provider_cost_usd = ?, input_tokens = ?, output_tokens = ?, completed_at = ? WHERE id = ? AND run_id = ?').bind('completed', result.requestId, result.id, providerCost, result.inputTokens, result.outputTokens, new Date().toISOString(), requestId, runId).run();
-		let structured: any; try { structured = JSON.parse(result.text.replace(/^```json\s*/i, '').replace(/\s*```$/, '')); } catch { structured = { summary: result.text, score: null, findings: [], actions: [] }; }
-		for (const action of structured.actions ?? []) await c.env.DB.prepare('INSERT INTO actions (id, scan_id, project_id, type, priority, score, confidence, evidence_json, diagnosis, recommended_action, draft, risk, status, approval_required, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(randomId(), runId, projectId, String(action.type ?? 'growth'), String(action.priority ?? 'medium'), 0, Number(action.confidence ?? 0.5), jsonText(action.evidenceIndexes ?? []), String(action.rationale ?? ''), String(action.title ?? ''), action.draft ? String(action.draft) : null, 'Review before publishing', 'pending', action.approvalRequired === false ? 0 : 1, new Date().toISOString()).run();
-		const chargedCents = addon === 'default' ? 0 : centsFromUsd(providerCost * 1.4); if (chargedCents > 0) { const ledgerKey = `${runId}:charge`; const debit = await c.env.DB.prepare('UPDATE wallets SET balance_cents = balance_cents - ?, updated_at = ? WHERE workspace_id = ? AND balance_cents >= ?').bind(chargedCents, new Date().toISOString(), workspace.workspace_id, chargedCents).run(); if (debit.meta.changes !== 1) throw new Error('insufficient_balance'); const balanceAfter = await c.env.DB.prepare('SELECT balance_cents FROM wallets WHERE workspace_id = ?').bind(workspace.workspace_id).first<{ balance_cents: number }>(); await c.env.DB.prepare('INSERT INTO wallet_transactions (id, workspace_id, kind, amount_cents, balance_after_cents, idempotency_key, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(randomId(), workspace.workspace_id, 'run_charge', -chargedCents, balanceAfter?.balance_cents ?? 0, ledgerKey, jsonText({ runId, providerCostUsd: providerCost, multiplier: 1.4, model }), new Date().toISOString()).run(); }
-		const finishedAt = new Date().toISOString(); await c.env.DB.batch([c.env.DB.prepare('UPDATE scans SET status = ?, provider_cost_json = ?, completed_at = ? WHERE id = ? AND project_id = ?').bind('completed', jsonText({ providerCostUsd: providerCost }), finishedAt, runId, projectId), c.env.DB.prepare('UPDATE runs SET status = ?, result_json = ?, provider_cost_usd = ?, charged_cents = ?, completed_at = ? WHERE id = ? AND workspace_id = ?').bind('completed', jsonText(structured), providerCost, chargedCents, finishedAt, runId, workspace.workspace_id)]); return c.json({ runId, status: 'completed', model, providerCostUsd: providerCost, chargedCents, result: structured, evidenceCount: sources.length });
-	} catch (cause) { const error = cause instanceof Error ? cause.message : 'run_failed'; await c.env.DB.prepare('UPDATE runs SET status = ?, error = ?, completed_at = ? WHERE id = ? AND workspace_id = ?').bind('failed', error === 'insufficient_balance' ? 'Add balance before using this usage-priced add-on.' : 'The run could not be completed.', new Date().toISOString(), runId, workspace.workspace_id).run(); return apiError(c, error === 'insufficient_balance' ? 'Add balance before using this usage-priced add-on.' : 'The run could not be completed.', error === 'insufficient_balance' ? 402 : 502); }
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401);
+	const workspace = await getWorkspaceContext(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404);
+	const body = await c.req.json<{ siteUrl?: string; objective?: string; tier?: string; addon?: string; targetGeo?: string; keywords?: string[]; competitors?: string[]; idempotencyKey?: string }>();
+	const siteUrl = typeof body.siteUrl === 'string' ? body.siteUrl.trim() : ''; const objective = typeof body.objective === 'string' ? body.objective.trim() || 'Find the most useful next growth actions.' : 'Find the most useful next growth actions.'; const tier = (typeof body.tier === 'string' ? body.tier : workspace.plan) as Tier; const addon = (typeof body.addon === 'string' ? body.addon : 'default') as Addon; const idempotencyKey = typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim() ? body.idempotencyKey.trim() : randomId(); const keywords = Array.isArray(body.keywords) ? body.keywords.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean).slice(0, 20) : []; const competitors = Array.isArray(body.competitors) ? body.competitors.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean).slice(0, 10) : []; const targetGeo = typeof body.targetGeo === 'string' ? body.targetGeo.trim().slice(0, 120) : '';
+	if (!validHttpUrl(siteUrl) || objective.length < 3 || objective.length > 500 || !tierNames.has(tier) || !addonNames.has(addon) || planRank(tier) > planRank(workspace.plan) || (planRank(tier) > 1 && workspace.subscription_status !== 'active')) return apiError(c, 'Choose a plan available to this workspace.');
+	const duplicate = await c.env.DB.prepare('SELECT id, status FROM runs WHERE idempotency_key = ?').bind(idempotencyKey).first<{ id: string; status: string }>(); if (duplicate) return c.json({ runId: duplicate.id, status: duplicate.status, duplicate: true });
+	const today = new Date(Date.now() - 86400000).toISOString(); const count = await c.env.DB.prepare("SELECT COUNT(*) AS total FROM runs WHERE workspace_id = ? AND created_at > ?").bind(workspace.id, today).first<{ total: number }>(); if ((count?.total ?? 0) >= MAX_RUNS_PER_DAY) return apiError(c, 'Daily run limit reached. Try again tomorrow.', 429);
+	const active = await c.env.DB.prepare("SELECT COUNT(*) AS total FROM runs WHERE workspace_id = ? AND status IN ('queued', 'running')").bind(workspace.id).first<{ total: number }>(); if ((active?.total ?? 0) >= 2) return apiError(c, 'Two runs are already working. Let one finish first.', 429);
+	const project = await c.env.DB.prepare('SELECT id FROM projects WHERE workspace_id = ? AND site_url = ? ORDER BY created_at LIMIT 1').bind(workspace.id, siteUrl).first<{ id: string }>(); const projectId = project?.id ?? randomId(); const runId = randomId(); const model = modelFor(tier, addon); const now = new Date().toISOString();
+	if (!project) await c.env.DB.prepare('INSERT INTO projects (id, workspace_id, site_url, product_category, icp, target_geo, competitors_json, brand_voice_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(projectId, workspace.id, siteUrl, null, null, targetGeo || null, jsonText(competitors), '{}', now).run(); else await c.env.DB.prepare('UPDATE projects SET target_geo = ?, competitors_json = ? WHERE id = ? AND workspace_id = ?').bind(targetGeo || null, jsonText(competitors), projectId, workspace.id).run();
+		await c.env.DB.batch([c.env.DB.prepare('INSERT INTO runs (id, workspace_id, project_id, site_url, objective, addon, tier, model, status, idempotency_key, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(runId, workspace.id, projectId, siteUrl, objective, addon, tier, model, 'queued', idempotencyKey, now), c.env.DB.prepare('INSERT INTO scans (id, project_id, status, scan_type, provider_cost_json, created_at) VALUES (?, ?, ?, ?, ?, ?)').bind(runId, projectId, 'queued', 'agent_diagnosis', '{}', now)]);
+		const task = async () => {
+			await c.env.DB.prepare("UPDATE runs SET status = 'running' WHERE id = ? AND workspace_id = ? AND status = 'queued'").bind(runId, workspace.id).run(); await c.env.DB.prepare("UPDATE scans SET status = 'running' WHERE id = ? AND project_id = ? AND status = 'queued'").bind(runId, projectId).run();
+			try {
+		const searchQueries = Array.from(new Set([`${siteUrl} ${objective}`, ...keywords.map((keyword) => `${keyword}${targetGeo ? ` ${targetGeo}` : ''}`)])).slice(0, 5); const searchResults: any[] = []; let searchProvider = providerName(c.env);
+		for (const [queryIndex, query] of searchQueries.entries()) { const searchRequest = randomId(); await c.env.DB.prepare('INSERT INTO run_requests (id, run_id, workspace_id, request_key, provider, model, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').bind(searchRequest, runId, workspace.id, `${runId}:search:${queryIndex}`, providerName(c.env), 'web-search', 'started', now).run(); try { const currentSearch = await searchWeb(c.env, query); searchProvider = currentSearch.provider; searchResults.push(...currentSearch.results.map((item: any) => ({ ...item, query }))); await c.env.DB.prepare('UPDATE run_requests SET status = ?, completed_at = ? WHERE id = ? AND run_id = ?').bind('completed', new Date().toISOString(), searchRequest, runId).run(); } catch (cause) { await c.env.DB.prepare('UPDATE run_requests SET status = ?, error = ?, completed_at = ? WHERE id = ? AND run_id = ?').bind('failed', cause instanceof Error ? cause.message : 'search_failed', new Date().toISOString(), searchRequest, runId).run(); } }
+		const search = { provider: searchProvider, results: searchResults }; const crawled = await crawlSite(c.env, siteUrl); for (const [index, page] of crawled.entries()) await c.env.DB.prepare('INSERT INTO run_requests (id, run_id, workspace_id, request_key, provider, model, status, created_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(randomId(), runId, workspace.id, `${runId}:crawl:${index}`, page.provider, 'page-reader', 'completed', now, new Date().toISOString()).run(); const sourceMap = new Map<string, { title: string; url: string; excerpt: string; provider: string; position?: number; query?: string }>(); for (const source of [...search.results, ...crawled]) if (validHttpUrl(source.url) && !sourceMap.has(source.url)) sourceMap.set(source.url, { title: source.title, url: source.url, excerpt: source.excerpt, provider: source.provider, position: source.position, query: source.query }); const sources = Array.from(sourceMap.values()).slice(0, 12); for (const source of sources) await c.env.DB.prepare('INSERT INTO evidence_snapshots (id, run_id, workspace_id, provider, query, url, title, excerpt, content_hash, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(randomId(), runId, workspace.id, source.provider, source.query ?? `${siteUrl} ${objective}`, source.url, source.title, source.excerpt, await sha256(`${source.url}|${source.excerpt}`), new Date().toISOString()).run();
+		const targetHost = new URL(siteUrl).hostname.replace(/^www\./, ''); const rankChecks = searchQueries.map((query) => { const results = search.results.filter((source: any) => source.query === query && validHttpUrl(source.url)); const targetIndex = results.findIndex((source: any) => { try { const host = new URL(source.url).hostname.replace(/^www\./, ''); return host === targetHost || host.endsWith(`.${targetHost}`); } catch { return false; } }); return { query, position: targetIndex >= 0 ? Number(results[targetIndex].position ?? targetIndex + 1) : null, observedResults: results.slice(0, 5).map((source: any) => ({ position: Number(source.position ?? 0), title: source.title, url: source.url })) }; }); const context = sources.map((source, index) => `[${index + 1}] ${source.title}${source.position ? ` (search position ${source.position})` : ''}\n${source.url}\n${source.excerpt}`).join('\n\n'); const researchPrompt = `You are the research and diagnosis stage of heyIssac. Analyze only the supplied evidence for ${siteUrl}. The user's objective is: ${objective}. Target geography: ${targetGeo || 'not specified'}. Target keywords: ${keywords.join(', ') || 'not specified'}. Competitors: ${competitors.join(', ') || 'not specified'}. Return JSON only with summary, score, geo, findings, and actions. geo must include visibility (observed, limited, or not_measured), notes, and gaps. Each finding must include title, diagnosis, priority, confidence, and evidenceIndexes. Each action must include title, rationale, type, priority, draft, and approvalRequired. Separate observed facts from hypotheses and never invent a search position.\nEvidence:\n${context || 'No public evidence was returned; explain the limitation.'}`;
+		const diagnosis = await validatedModelStage(c.env.DB, c.env, runId, workspace.id, model, 'diagnosis', researchPrompt); const planningPrompt = `You are the ranking and GEO action stage of heyIssac. Using this evidence-backed diagnosis, produce a final JSON object with summary, score, geo, findings, and actions. geo must include visibility, notes, and gaps, and must distinguish measured search positions from unmeasured recommendations. Rank actions by impact and effort. Include specific search/discovery or GEO actions when supported; do not claim a ranking position without measured rank evidence. Preserve evidenceIndexes and mark drafts approvalRequired true. Diagnosis:\n${jsonText(diagnosis.structured)}\nMeasured rank checks:\n${jsonText(rankChecks)}\nEvidence:\n${context}`; const planning = await validatedModelStage(c.env.DB, c.env, runId, workspace.id, model, 'planning', planningPrompt); const structured = planning.structured; const providerCost = diagnosis.result.cost + planning.result.cost; const chargedCents = addon === 'default' ? 0 : centsFromUsd(providerCost * 1.4);
+		for (const action of structured.actions) await c.env.DB.prepare('INSERT INTO actions (id, scan_id, project_id, type, priority, score, confidence, evidence_json, diagnosis, recommended_action, draft, risk, status, approval_required, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(randomId(), runId, projectId, action.type, action.priority, structured.score ?? 0, action.approvalRequired ? 0.7 : 0.5, jsonText(action.evidenceIndexes), action.rationale, action.title, action.draft, 'Review before publishing', 'pending', action.approvalRequired ? 1 : 0, new Date().toISOString()).run();
+		if (chargedCents > 0) { const chargedAt = new Date().toISOString(); const chargeBatch = await c.env.DB.batch([c.env.DB.prepare('UPDATE wallets SET balance_cents = balance_cents - ?, updated_at = ? WHERE workspace_id = ? AND balance_cents >= ?').bind(chargedCents, chargedAt, workspace.id, chargedCents), c.env.DB.prepare("INSERT INTO wallet_transactions (id, workspace_id, kind, amount_cents, balance_after_cents, idempotency_key, metadata_json, created_at) SELECT ?, ?, 'run_charge', ?, balance_cents, ?, ?, ? FROM wallets WHERE workspace_id = ? AND changes() = 1").bind(randomId(), workspace.id, -chargedCents, `${runId}:charge`, jsonText({ runId, providerCostUsd: providerCost, multiplier: 1.4, model }), chargedAt, workspace.id)]); if (chargeBatch[0].meta.changes !== 1 || chargeBatch[1].meta.changes !== 1) throw new Error('insufficient_balance'); }
+		const requestCount = await c.env.DB.prepare('SELECT COUNT(*) AS total FROM run_requests WHERE run_id = ? AND workspace_id = ?').bind(runId, workspace.id).first<{ total: number }>(); const finishedAt = new Date().toISOString(); await c.env.DB.batch([c.env.DB.prepare('UPDATE scans SET status = ?, provider_cost_json = ?, completed_at = ? WHERE id = ? AND project_id = ?').bind('completed', jsonText({ providerCostUsd: providerCost, requestCount: requestCount?.total ?? 0 }), finishedAt, runId, projectId), c.env.DB.prepare('UPDATE runs SET status = ?, result_json = ?, provider_cost_usd = ?, charged_cents = ?, completed_at = ? WHERE id = ? AND workspace_id = ?').bind('completed', jsonText({ ...structured, rankChecks, evidenceCount: sources.length }), providerCost, chargedCents, finishedAt, runId, workspace.id)]);
+		} catch (cause) { const publicError = cause instanceof Error && cause.message === 'insufficient_balance' ? 'Add balance before using this usage-priced add-on.' : 'The run could not be completed.'; await c.env.DB.batch([c.env.DB.prepare("UPDATE run_requests SET status = 'failed', error = ?, completed_at = ? WHERE run_id = ? AND workspace_id = ? AND status = 'started'").bind(publicError, new Date().toISOString(), runId, workspace.id), c.env.DB.prepare('DELETE FROM actions WHERE scan_id = ? AND project_id = ?').bind(runId, projectId), c.env.DB.prepare('DELETE FROM evidence_snapshots WHERE run_id = ? AND workspace_id = ?').bind(runId, workspace.id), c.env.DB.prepare('UPDATE scans SET status = ?, error = ?, completed_at = ? WHERE id = ? AND project_id = ?').bind('failed', publicError, new Date().toISOString(), runId, projectId), c.env.DB.prepare('UPDATE runs SET status = ?, error = ?, completed_at = ? WHERE id = ? AND workspace_id = ?').bind('failed', publicError, new Date().toISOString(), runId, workspace.id)]); }
+		}; c.executionCtx.waitUntil(task()); return c.json({ runId, status: 'queued', model }, 202);
 });
 app.get('/api/list', async (c) => {
-	const session = await readSession(c.req.raw, c.env.JWT_SECRET);
-	if (!session) return apiError(c, 'Sign in required', 401);
-	return c.json({ refreshedAt: new Date().toISOString(), status: 'ready', user: { username: session.username, role: session.role } });
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const workspace = await getWorkspaceForUser(c.env.DB, session.sub); if (!workspace) return apiError(c, 'Workspace not found.', 404); const rows = await c.env.DB.prepare('SELECT a.id, a.type, a.priority, a.score, a.confidence, a.diagnosis, a.recommended_action, a.draft, a.status, a.approval_required, a.created_at FROM actions a JOIN projects p ON p.id = a.project_id WHERE p.workspace_id = ? ORDER BY a.created_at DESC LIMIT 100').bind(workspace.workspace_id).all(); return c.json({ refreshedAt: new Date().toISOString(), status: 'ready', user: { username: session.username, role: session.role }, actions: rows.results });
 });
-app.notFound((c) => c.env.ASSETS.fetch(c.req.raw));
+app.notFound(async (c) => {
+	const response = await c.env.ASSETS.fetch(c.req.raw); const headers = new Headers(response.headers);
+	headers.set('X-Content-Type-Options', 'nosniff'); headers.set('Referrer-Policy', 'strict-origin-when-cross-origin'); headers.set('X-Frame-Options', 'DENY'); headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()'); headers.set('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+	return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+});
 
 export default app;
