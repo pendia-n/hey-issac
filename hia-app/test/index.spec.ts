@@ -56,8 +56,13 @@ describe("Hia app Worker API", () => {
 	it("exposes the model and add-on catalog without exposing secrets", async () => {
 		const response = await SELF.fetch("http://example.com/api/catalog");
 		expect(response.status).toBe(200);
-		const body = await response.json() as { plans: { starter: { default: string }; partner: { max: string } }; topUpMinimumCents: number };
+		const body = await response.json() as { plans: { starter: { default: string; push: string[]; max: string }; studio: { default: string; push: string[]; max: string }; partner: { default: string; push: string[]; max: string } }; topUpMinimumCents: number };
 		expect(body.plans.starter.default).toBe("qwen/qwen3.8-flash");
+		expect(body.plans.starter.push).toEqual(["stepfun/step-3.5-flash", "writer/palmyra-x5", "arcee-ai/trinity-large-thinking"]);
+		expect(body.plans.studio.push).toEqual(["google/gemini-3.8-flash", "thinkingmachines/inkling-small"]);
+		expect(body.plans.partner.push).toEqual(["openai/gpt-6-astra"]);
+		expect(body.plans.starter.max).toBe("minimax/minimax-m3:batch");
+		expect(body.plans.studio.max).toBe("anthropic/claude-sonnet-5:batch");
 		expect(body.plans.partner.max).toBe("openai/gpt-6-astra-pro");
 		expect(body.topUpMinimumCents).toBe(300);
 	});
@@ -73,6 +78,7 @@ describe("Hia app Worker API", () => {
 		const username = `apiuser${Date.now()}`;
 		const register = await SELF.fetch("http://example.com/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password: "abc12345" }) });
 		expect(register.status).toBe(201);
+		const registeredBody = await register.json() as { user: { id: string } };
 		const setCookie = register.headers.get("set-cookie") ?? "";
 		expect(setCookie).toContain("Max-Age=2419200");
 		expect(setCookie).toContain("HttpOnly");
@@ -85,7 +91,13 @@ describe("Hia app Worker API", () => {
 		const tokenBody = await tokenResponse.json() as { token: string };
 		const workspace = await SELF.fetch("http://example.com/api/workspace", { headers: { Authorization: `Bearer ${tokenBody.token}` } });
 		expect(workspace.status).toBe(200);
-		expect((await workspace.json() as { workspace: { plan: string } }).workspace.plan).toBe("starter");
+		const ownWorkspaceId = (await workspace.json() as { workspace: { id: string } }).workspace.id;
+		const otherWorkspaceId = `000_other_${Date.now()}`;
+		await env.DB.prepare("INSERT INTO workspaces (id, owner_user_id, name, plan, created_at) VALUES (?, ?, ?, ?, ?)").bind(otherWorkspaceId, registeredBody.user.id, "Other workspace", "partner", "0000-01-01T00:00:00.000Z").run();
+		await env.DB.prepare("INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)").bind(otherWorkspaceId, registeredBody.user.id, "owner").run();
+		const scopedWorkspace = await SELF.fetch("http://example.com/api/workspace", { headers: { Authorization: `Bearer ${tokenBody.token}` } });
+		expect(scopedWorkspace.status).toBe(200);
+		expect((await scopedWorkspace.json() as { workspace: { id: string; plan: string } }).workspace).toMatchObject({ id: ownWorkspaceId, plan: "starter" });
 		const me = await SELF.fetch("http://example.com/api/auth/me", { headers: { Authorization: `Bearer ${tokenBody.token}` } });
 		expect(me.status).toBe(200);
 	});
