@@ -85,7 +85,7 @@ function modelFor(tier: Tier, addon: Addon, requestedModel?: string) {
 function safeSearchResult(value: any, index = 0) { return { title: String(value.title ?? value.name ?? '').slice(0, 300), url: String(value.url ?? value.link ?? ''), excerpt: String(value.content ?? value.text ?? value.description ?? value.snippet ?? '').slice(0, 1200), position: index + 1 }; }
 async function searchWithProvider(env: AppEnv, provider: string, query: string) {
 	if (provider === 'exa' && env.EXA_API_KEY) {
-		const response = await fetch('https://api.exa.ai/search', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': env.EXA_API_KEY }, body: JSON.stringify({ query, numResults: 5, contents: { text: { maxCharacters: 1200 } } }) });
+		const response = await fetch('https://api.exa.ai/search', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': env.EXA_API_KEY }, body: JSON.stringify({ query, numResults: 5, contents: { text: true } }) });
 		if (!response.ok) throw new Error(`search_${response.status}`);
 		const body = await response.json() as any;
 		return { provider, results: (body.results ?? []).map((item: any, index: number) => safeSearchResult(item, index)).filter((item: any) => validHttpUrl(item.url)) };
