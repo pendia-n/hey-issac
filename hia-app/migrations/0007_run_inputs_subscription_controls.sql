@@ -1,0 +1,2 @@
+ALTER TABLE workspaces ADD COLUMN cancel_at_period_end INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE runs ADD COLUMN keywords_json TEXT NOT NULL DEFAULT '[]';

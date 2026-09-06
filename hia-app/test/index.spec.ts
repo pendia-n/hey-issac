@@ -5,7 +5,7 @@ beforeAll(async () => {
 	(env as unknown as { JWT_SECRET: string }).JWT_SECRET = "test-only-jwt-secret-for-vitest";
 	await env.DB.exec(`
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'owner', created_at TEXT NOT NULL, recovery_email TEXT, totp_secret TEXT, passcode_hash TEXT, updated_at TEXT, business_name TEXT, brand_voice TEXT);
-CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, name TEXT NOT NULL, plan TEXT NOT NULL DEFAULT 'starter', created_at TEXT NOT NULL, stripe_customer_id TEXT, stripe_subscription_id TEXT, subscription_status TEXT NOT NULL DEFAULT 'active', current_period_end TEXT);
+CREATE TABLE IF NOT EXISTS workspaces (id TEXT PRIMARY KEY, owner_user_id TEXT NOT NULL, name TEXT NOT NULL, plan TEXT NOT NULL DEFAULT 'starter', created_at TEXT NOT NULL, stripe_customer_id TEXT, stripe_subscription_id TEXT, subscription_status TEXT NOT NULL DEFAULT 'active', current_period_end TEXT, cancel_at_period_end INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS workspace_members (workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, PRIMARY KEY (workspace_id, user_id));
 CREATE TABLE IF NOT EXISTS wallets (workspace_id TEXT PRIMARY KEY, balance_cents INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS security_answers (user_id TEXT NOT NULL, question_key TEXT NOT NULL, answer_hash TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (user_id, question_key));

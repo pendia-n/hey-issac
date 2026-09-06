@@ -12,12 +12,29 @@
     "run_worker_first": true,
     "not_found_handling": "single-page-application"
   },
+  "vars": {
+    "SEARCH_PROVIDER": "exa"
+  },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "hey-issac-db",
       "database_id": "03da1217-c3ae-45ec-b0bf-f7209c0ab39b",
       "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RUNS",
+        "class_name": "RunCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RunCoordinator"]
     }
   ],
   "observability": {
