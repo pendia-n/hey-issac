@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react';
+import { CreditCard, Info } from 'lucide-react';
 
 type User = { id: string; username: string; role: string };
 type Page = 'today' | 'shop' | 'list' | 'profile' | 'security';
@@ -73,7 +74,7 @@ export default function App() {
 }
 
 function PublicNav({ onStart, onNavigate }: { onStart: () => void; onNavigate: (path: string) => void }) {
-	return <header className="public-nav"><button className="public-brand" onClick={() => onNavigate('/')}><img src="/hi.svg" alt="heyIssac" /><span>heyIssac</span></button><nav><button title="Pricing" aria-label="Pricing" onClick={() => onNavigate('/pricing')}><span className="public-nav-icon" aria-hidden="true">$</span><span className="public-nav-label">Pricing</span></button><button title="About" aria-label="About" onClick={() => onNavigate('/about')}><span className="public-nav-icon" aria-hidden="true">i</span><span className="public-nav-label">About</span></button></nav><button className="public-signin" onClick={onStart}>Sign in <span>↗</span></button></header>;
+	return <header className="public-nav"><button className="public-brand" onClick={() => onNavigate('/')}><img src="/hi.svg" alt="heyIssac" /><span>heyIssac</span></button><nav><button title="Pricing" aria-label="Pricing" onClick={() => onNavigate('/pricing')}><CreditCard className="public-nav-icon" aria-hidden="true" /><span className="public-nav-label">Pricing</span></button><button title="About" aria-label="About" onClick={() => onNavigate('/about')}><Info className="public-nav-icon" aria-hidden="true" /><span className="public-nav-label">About</span></button></nav><button className="public-signin" onClick={onStart}>Sign in <span>↗</span></button></header>;
 }
 
 function Landing({ onStart, onNavigate }: { onStart: () => void; onNavigate: (path: string) => void }) {
