@@ -545,6 +545,7 @@ app.get('/api/list', async (c) => {
 });
 app.notFound(async (c) => {
 	const response = await c.env.ASSETS.fetch(c.req.raw); const headers = new Headers(response.headers);
+	if (headers.get('Content-Type')?.includes('text/html')) headers.set('Cache-Control', 'no-store');
 	headers.set('X-Content-Type-Options', 'nosniff'); headers.set('Referrer-Policy', 'strict-origin-when-cross-origin'); headers.set('X-Frame-Options', 'DENY'); headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()'); headers.set('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
 	return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 });
