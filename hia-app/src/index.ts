@@ -13,7 +13,7 @@
 
 import { Hono } from 'hono';
 import { DurableObject } from 'cloudflare:workers';
-import { generateTotpSecret, hashPassword, normalizeSecurityAnswer, readSession, readSignedToken, randomId, SESSION_SECONDS, sessionCookie, signJwt, expiredCookie, validPasscode, validPassword, validRecoveryEmail, verifyPassword, verifyTotp } from './auth';
+import { generateTotpSecret, hashPassword, readSession, readSignedToken, randomId, SESSION_SECONDS, sessionCookie, signJwt, expiredCookie, validPasscode, validPassword, verifyPassword, verifyTotp } from './auth';
 
 interface AppEnv {
 	ASSETS: { fetch: (request: Request) => Promise<Response> };
@@ -38,26 +38,7 @@ const app = new Hono<{ Bindings: AppEnv }>();
 app.use('*', async (c, next) => { await next(); c.header('X-Content-Type-Options', 'nosniff'); c.header('Referrer-Policy', 'strict-origin-when-cross-origin'); c.header('X-Frame-Options', 'DENY'); c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()'); c.header('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"); });
 app.get('/api/health', (c) => c.json({ ok: true, service: 'heyIssac' }));
 const apiError = (c: any, message: string, status = 400) => c.json({ error: message }, status);
-const securityQuestions = [
-	{ key: 'first_school', question: 'What was the name of your first school?' },
-	{ key: 'childhood_street', question: 'What street did you grow up on?' },
-	{ key: 'first_manager_teacher', question: 'What was the name of your first manager or teacher?' },
-	{ key: 'first_pet', question: 'What was the name of your first pet?' },
-	{ key: 'parents_met_city', question: 'What city did your parents meet in?' },
-	{ key: 'first_live_event', question: 'What was the first concert or live event you attended?' },
-	{ key: 'childhood_friend', question: 'What was the name of your childhood best friend?' },
-	{ key: 'first_phone', question: 'What was the model of your first phone?' },
-	{ key: 'childhood_place', question: 'What was your favorite place to visit as a child?' },
-	{ key: 'first_dish', question: 'What was the first dish you learned to cook?' },
-	{ key: 'first_company', question: 'What was the name of the first company you worked for?' },
-	{ key: 'family_nickname', question: 'What nickname did your family use for you?' },
-	{ key: 'first_book', question: 'What was the first book you remember loving?' },
-	{ key: 'childhood_game', question: 'What was the name of your favorite childhood game?' },
-	{ key: 'first_username', question: 'What was the first username or screen name you used?' },
-];
-type SecurityAnswer = { questionKey?: string; answer?: string };
-type RecoverySetup = { recoveryEmail?: string; passcode?: string; securityAnswers?: SecurityAnswer[]; totpSecret?: string; totpCode?: string };
-const validQuestionKeys = new Set(securityQuestions.map((item) => item.key));
+type RecoverySetup = { passcode?: string; totpSecret?: string; totpCode?: string };
 const MODEL_CATALOG = {
 	starter: { default: 'qwen/qwen3.8-flash', push: ['stepfun/step-3.5-flash', 'writer/palmyra-x5', 'arcee-ai/trinity-large-thinking'], max: 'minimax/minimax-m3:batch' },
 	studio: { default: 'moonshotai/kimi-k2.7-code', push: ['google/gemini-3.8-flash', 'thinkingmachines/inkling-small'], max: 'anthropic/claude-sonnet-5:batch' },
@@ -157,7 +138,7 @@ async function validatedModelStage(db: D1Database, env: AppEnv, runId: string, w
 		return { result: repair, structured: parseAgentResult(repair.text) };
 	}
 }
-const getUserByUsername = (db: D1Database, username: string) => db.prepare('SELECT id, username, password_hash, role, recovery_email, totp_secret, passcode_hash FROM users WHERE username = ?').bind(username).first<{ id: string; username: string; password_hash: string; role: string; recovery_email?: string | null; totp_secret?: string | null; passcode_hash?: string | null }>();
+const getUserByUsername = (db: D1Database, username: string) => db.prepare('SELECT id, username, password_hash, role, totp_secret, passcode_hash FROM users WHERE username = ?').bind(username).first<{ id: string; username: string; password_hash: string; role: string; totp_secret?: string | null; passcode_hash?: string | null }>();
 const getSession = async (c: any): Promise<AuthSession | null> => {
 	const session = await readSession(c.req.raw, c.env.JWT_SECRET);
 	if (session) return session;
@@ -171,21 +152,13 @@ const getSession = async (c: any): Promise<AuthSession | null> => {
 	return { sub: token.user_id, username: token.username, role: token.role, workspaceId: token.workspace_id, iat: 0, exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS };
 };
 async function validateRecoverySetup(body: RecoverySetup) {
-	if (body.recoveryEmail !== undefined) { const email = body.recoveryEmail.trim().toLowerCase(); if (email && !validRecoveryEmail(email)) throw new Error('email'); }
 	if (body.passcode !== undefined) { const passcode = body.passcode.trim(); if (passcode && !validPasscode(passcode)) throw new Error('passcode'); }
 	if (body.totpSecret !== undefined || body.totpCode !== undefined) { const secret = body.totpSecret?.trim().replace(/\s+/g, '').toUpperCase() ?? ''; const code = body.totpCode?.trim() ?? ''; if (secret && !(await verifyTotp(secret, code))) throw new Error('totp'); }
-	if (body.securityAnswers !== undefined) { const answers = body.securityAnswers.filter((item) => item.questionKey || item.answer); const keys = answers.map((item) => item.questionKey); const normalized = answers.map((item) => normalizeSecurityAnswer(item.answer ?? '')); if (answers.length && (answers.length < 2 || answers.length > 3 || new Set(keys).size !== answers.length || new Set(normalized).size !== answers.length || answers.some((item) => !item.questionKey || !validQuestionKeys.has(item.questionKey) || !normalizeSecurityAnswer(item.answer ?? '')))) throw new Error('security_answers'); }
 }
 async function applyRecoverySetup(db: D1Database, userId: string, body: RecoverySetup) {
 	await validateRecoverySetup(body);
 	const updates: string[] = [];
 	const bindings: unknown[] = [];
-	if (body.recoveryEmail !== undefined) {
-		const email = body.recoveryEmail.trim().toLowerCase();
-		if (email && !validRecoveryEmail(email)) throw new Error('email');
-		updates.push('recovery_email = ?');
-		bindings.push(email || null);
-	}
 	if (body.passcode !== undefined) {
 		const passcode = body.passcode.trim();
 		if (passcode && !validPasscode(passcode)) throw new Error('passcode');
@@ -200,14 +173,6 @@ async function applyRecoverySetup(db: D1Database, userId: string, body: Recovery
 		bindings.push(secret || null);
 	}
 	if (updates.length) await db.prepare(`UPDATE users SET ${updates.join(', ')}, updated_at = ? WHERE id = ?`).bind(...bindings, new Date().toISOString(), userId).run();
-	if (body.securityAnswers !== undefined) {
-		const answers = body.securityAnswers.filter((item) => item.questionKey || item.answer);
-		const keys = answers.map((item) => item.questionKey);
-		const normalized = answers.map((item) => normalizeSecurityAnswer(item.answer ?? ''));
-		if (answers.length && (answers.length < 2 || answers.length > 3 || new Set(keys).size !== answers.length || new Set(normalized).size !== answers.length || answers.some((item) => !item.questionKey || !validQuestionKeys.has(item.questionKey) || !normalizeSecurityAnswer(item.answer ?? '')))) throw new Error('security_answers');
-		await db.prepare('DELETE FROM security_answers WHERE user_id = ?').bind(userId).run();
-		for (const item of answers) await db.prepare('INSERT INTO security_answers (user_id, question_key, answer_hash, created_at) VALUES (?, ?, ?, ?)').bind(userId, item.questionKey, await hashPassword(normalizeSecurityAnswer(item.answer ?? '')), new Date().toISOString()).run();
-	}
 }
 app.get('/api/auth/me', async (c) => {
 	const session = await getSession(c);
@@ -219,7 +184,6 @@ app.get('/api/auth/username-availability', async (c) => {
 	const existing = await c.env.DB.prepare('SELECT id FROM users WHERE username = ?').bind(username).first();
 	return c.json({ username, valid: true, available: !existing });
 });
-app.get('/api/auth/security-questions', (c) => c.json({ questions: securityQuestions }));
 app.get('/api/auth/totp/setup-preview', (c) => {
 	const secret = generateTotpSecret();
 	const issuer = 'heyIssac';
@@ -228,7 +192,7 @@ app.get('/api/auth/totp/setup-preview', (c) => {
 });
 app.post('/api/auth/register', async (c) => {
 	try {
-		const body = await c.req.json<{ username?: string; password?: string; recoveryEmail?: string; passcode?: string; securityAnswers?: SecurityAnswer[]; totpSecret?: string; totpCode?: string }>();
+		const body = await c.req.json<{ username?: string; password?: string; passcode?: string; totpSecret?: string; totpCode?: string }>();
 		const username = body.username?.trim().toLowerCase();
 		const password = body.password ?? '';
 		if (!username || !/^[a-z0-9][a-z0-9_.-]{2,39}$/.test(username) || !validPassword(password)) return apiError(c, 'Use a valid username and a password with 7–18 characters, including one letter and one digit.');
@@ -239,6 +203,7 @@ app.post('/api/auth/register', async (c) => {
 		const now = new Date().toISOString();
 		const encodedPassword = await hashPassword(password);
 		await validateRecoverySetup(body);
+		if (!body.passcode?.trim() && !body.totpSecret?.trim()) return apiError(c, 'Choose a recovery passcode, an authenticator, or both.');
 		await c.env.DB.prepare('INSERT INTO users (id, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)').bind(id, username, encodedPassword, 'owner', now).run();
 		await c.env.DB.prepare('INSERT INTO workspaces (id, owner_user_id, name, plan, created_at) VALUES (?, ?, ?, ?, ?)').bind(workspaceId, id, 'My workspace', 'starter', now).run();
 		await c.env.DB.prepare('INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)').bind(workspaceId, id, 'owner').run();
@@ -249,7 +214,7 @@ app.post('/api/auth/register', async (c) => {
 		return new Response(JSON.stringify({ user: { id, username, role: 'owner' } }), { status: 201, headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(token) } });
 	} catch (cause) {
 		console.error('registration_failed', cause instanceof Error ? cause.message : 'unknown_error');
-		return apiError(c, 'Unable to create your account right now.', 500);
+		return apiError(c, cause instanceof Error && ['passcode', 'totp'].includes(cause.message) ? 'Check your recovery method and try again.' : 'Unable to create your account right now.', cause instanceof Error && ['passcode', 'totp'].includes(cause.message) ? 400 : 500);
 	}
 });
 
@@ -268,23 +233,19 @@ app.get('/api/auth/recovery-status', async (c) => {
 	const username = c.req.query('username')?.trim().toLowerCase() ?? '';
 	if (!username) return apiError(c, 'Username is required.');
 	const row = await getUserByUsername(c.env.DB, username);
-	const answers = row ? await c.env.DB.prepare('SELECT question_key FROM security_answers WHERE user_id = ? ORDER BY question_key').bind(row.id).all<{ question_key: string }>() : { results: [] };
-	return c.json({ username, canRecover: !!row && (!!row.recovery_email || !!row.totp_secret || !!row.passcode_hash || answers.results.length >= 2), methods: row ? { email: !!row.recovery_email, totp: !!row.totp_secret, passcode: !!row.passcode_hash, securityQuestions: answers.results.map((item) => item.question_key) } : { email: false, totp: false, passcode: false, securityQuestions: [] } });
+	if (!row) return apiError(c, 'No account was found for that username.', 404);
+	const methods = [row.totp_secret ? 'totp' : null, row.passcode_hash ? 'passcode' : null].filter(Boolean);
+	if (!methods.length) return apiError(c, 'This account has no enabled recovery method.', 409);
+	return c.json({ username, methods });
 });
 app.post('/api/auth/recovery/verify', async (c) => {
-	const body = await c.req.json<{ username?: string; method?: string; email?: string; code?: string; passcode?: string; securityAnswers?: SecurityAnswer[] }>();
+	const body = await c.req.json<{ username?: string; method?: string; code?: string; passcode?: string }>();
 	const username = body.username?.trim().toLowerCase() ?? '';
 	const row = username ? await getUserByUsername(c.env.DB, username) : null;
 	if (!row) return apiError(c, 'Recovery could not be verified.', 401);
 	let verified = false;
-	if (body.method === 'email' && row.recovery_email) verified = body.email?.trim().toLowerCase() === row.recovery_email;
 	if (body.method === 'totp' && row.totp_secret) verified = await verifyTotp(row.totp_secret, body.code ?? '');
 	if (body.method === 'passcode' && row.passcode_hash) verified = await verifyPassword(body.passcode ?? '', row.passcode_hash);
-	if (body.method === 'securityQuestions') {
-		const stored = await c.env.DB.prepare('SELECT question_key, answer_hash FROM security_answers WHERE user_id = ?').bind(row.id).all<{ question_key: string; answer_hash: string }>();
-		const submitted = new Map((body.securityAnswers ?? []).map((item) => [item.questionKey, normalizeSecurityAnswer(item.answer ?? '')]));
-		verified = stored.results.length >= 2 && stored.results.every((item) => submitted.has(item.question_key)) && (await Promise.all(stored.results.map((item) => verifyPassword(submitted.get(item.question_key) ?? '', item.answer_hash)))).every(Boolean);
-	}
 	if (!verified) return apiError(c, 'Recovery could not be verified.', 401);
 	const current = Math.floor(Date.now() / 1000);
 	const resetToken = await signJwt({ sub: row.id, username: row.username, role: row.role, iat: current, exp: current + 600, purpose: 'password_reset' }, c.env.JWT_SECRET);
@@ -303,14 +264,24 @@ app.post('/api/auth/password-change', async (c) => {
 	if (!session) return apiError(c, 'Sign in required', 401);
 	const body = await c.req.json<{ password?: string }>();
 	if (!validPassword(body.password ?? '')) return apiError(c, 'Use 7–18 characters with one letter and one digit.');
+	const cutoff = new Date(Date.now() - 86_400_000).toISOString();
+	const recent = await c.env.DB.prepare('SELECT COUNT(*) AS total FROM password_change_events WHERE user_id = ? AND changed_at >= ?').bind(session.sub, cutoff).first<{ total: number }>();
+	if ((recent?.total ?? 0) >= 4) return apiError(c, 'You can change your password up to four times in 24 hours.', 429);
+	const changedAt = new Date().toISOString();
 	await c.env.DB.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?').bind(await hashPassword(body.password ?? ''), new Date().toISOString(), session.sub).run();
-	return c.json({ ok: true });
+	await c.env.DB.prepare('INSERT INTO password_change_events (id, user_id, changed_at) VALUES (?, ?, ?)').bind(randomId(), session.sub, changedAt).run();
+	return c.json({ ok: true, remaining: 3 - (recent?.total ?? 0) });
 });
 app.post('/api/auth/security/setup', async (c) => {
 	const session = await getSession(c);
 	if (!session) return apiError(c, 'Sign in required', 401);
 	try {
-		await applyRecoverySetup(c.env.DB, session.sub, await c.req.json());
+		const body = await c.req.json<RecoverySetup>();
+		const current = await c.env.DB.prepare('SELECT totp_secret, passcode_hash FROM users WHERE id = ?').bind(session.sub).first<{ totp_secret?: string | null; passcode_hash?: string | null }>();
+		const keepsTotp = body.totpSecret === undefined ? !!current?.totp_secret : !!body.totpSecret.trim();
+		const keepsPasscode = body.passcode === undefined ? !!current?.passcode_hash : !!body.passcode.trim();
+		if (!keepsTotp && !keepsPasscode) return apiError(c, 'Keep at least one recovery method enabled.');
+		await applyRecoverySetup(c.env.DB, session.sub, body);
 		return c.json({ ok: true });
 	} catch {
 		return apiError(c, 'Check your recovery details and try again.');
@@ -329,7 +300,7 @@ app.patch('/api/profile', async (c) => {
 	return c.json({ ok: true });
 });
 app.get('/api/security/status', async (c) => {
-	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const user = await c.env.DB.prepare('SELECT recovery_email, totp_secret, passcode_hash FROM users WHERE id = ?').bind(session.sub).first<{ recovery_email?: string | null; totp_secret?: string | null; passcode_hash?: string | null }>(); const answers = await c.env.DB.prepare('SELECT COUNT(*) AS total FROM security_answers WHERE user_id = ?').bind(session.sub).first<{ total: number }>(); return c.json({ email: !!user?.recovery_email, totp: !!user?.totp_secret, passcode: !!user?.passcode_hash, securityQuestions: answers?.total ?? 0 });
+	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401); const user = await c.env.DB.prepare('SELECT totp_secret, passcode_hash FROM users WHERE id = ?').bind(session.sub).first<{ totp_secret?: string | null; passcode_hash?: string | null }>(); return c.json({ totp: !!user?.totp_secret, passcode: !!user?.passcode_hash });
 });
 app.get('/api/auth/tokens', async (c) => {
 	const session = await getSession(c); if (!session) return apiError(c, 'Sign in required', 401);

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS workspace_members (workspace_id TEXT NOT NULL, user_i
 CREATE TABLE IF NOT EXISTS wallets (workspace_id TEXT PRIMARY KEY, balance_cents INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS security_answers (user_id TEXT NOT NULL, question_key TEXT NOT NULL, answer_hash TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (user_id, question_key));
 CREATE TABLE IF NOT EXISTS api_tokens (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, workspace_id TEXT NOT NULL, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, expires_at TEXT, revoked_at TEXT, created_at TEXT NOT NULL, last_used_at TEXT);
+CREATE TABLE IF NOT EXISTS password_change_events (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, changed_at TEXT NOT NULL);
 `);
 });
 
@@ -47,11 +48,9 @@ describe("Hia app Worker API", () => {
 		expect(response.status).toBe(400);
 	});
 
-	it("exposes shared recovery questions", async () => {
-		const response = await SELF.fetch("http://example.com/api/auth/security-questions");
-		expect(response.status).toBe(200);
-		const body = await response.json() as { questions: { key: string; question: string }[] };
-		expect(body.questions.length).toBeGreaterThanOrEqual(10);
+	it("requires one supported recovery method at registration", async () => {
+		const response = await SELF.fetch("http://example.com/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: `nomethod${Date.now()}`, password: "abc12345" }) });
+		expect(response.status).toBe(400);
 	});
 
 	it("exposes the model and add-on catalog without exposing secrets", async () => {
@@ -75,9 +74,35 @@ describe("Hia app Worker API", () => {
 		}
 	});
 
+	it("reveals only enabled recovery methods and resets by passcode", async () => {
+		const username = `recover${Date.now()}`;
+		const register = await SELF.fetch("http://example.com/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password: "abc12345", passcode: "back1234" }) });
+		expect(register.status).toBe(201);
+		const status = await SELF.fetch(`http://example.com/api/auth/recovery-status?username=${username}`);
+		expect(await status.json()).toEqual({ username, methods: ["passcode"] });
+		const verify = await SELF.fetch("http://example.com/api/auth/recovery/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, method: "passcode", passcode: "back1234" }) });
+		const resetToken = (await verify.json() as { resetToken: string }).resetToken;
+		const reset = await SELF.fetch("http://example.com/api/auth/password-reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resetToken, password: "newpass9" }) });
+		expect(reset.status).toBe(200);
+		const login = await SELF.fetch("http://example.com/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password: "newpass9" }) });
+		expect(login.status).toBe(200);
+	});
+
+	it("limits signed-in password changes to four in 24 hours", async () => {
+		const username = `limit${Date.now()}`;
+		const register = await SELF.fetch("http://example.com/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password: "abc12345", passcode: "limit123" }) });
+		const cookie = (register.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+		for (let index = 0; index < 4; index += 1) {
+			const change = await SELF.fetch("http://example.com/api/auth/password-change", { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ password: `changed${index}9` }) });
+			expect(change.status).toBe(200);
+		}
+		const blocked = await SELF.fetch("http://example.com/api/auth/password-change", { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ password: "blocked9" }) });
+		expect(blocked.status).toBe(429);
+	});
+
 	it("supports profile persistence and bearer-token API access", async () => {
 		const username = `apiuser${Date.now()}`;
-		const register = await SELF.fetch("http://example.com/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password: "abc12345" }) });
+		const register = await SELF.fetch("http://example.com/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password: "abc12345", passcode: "safe1234" }) });
 		expect(register.status).toBe(201);
 		const registeredBody = await register.json() as { user: { id: string } };
 		const setCookie = register.headers.get("set-cookie") ?? "";
