@@ -26,9 +26,10 @@ describe("Hia app Worker API", () => {
 		expect(await response.json()).toEqual({ error: "Sign in required" });
 	});
 
-	it("rejects a missing session", async () => {
+	it("reports a guest session without a browser error", async () => {
 		const response = await SELF.fetch("http://example.com/api/auth/me");
-		expect(response.status).toBe(401);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ user: null });
 	});
 
 	it("validates username availability input", async () => {

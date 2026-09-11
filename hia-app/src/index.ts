@@ -211,7 +211,7 @@ async function applyRecoverySetup(db: D1Database, userId: string, body: Recovery
 }
 app.get('/api/auth/me', async (c) => {
 	const session = await getSession(c);
-	return session ? c.json({ user: { id: session.sub, username: session.username, role: session.role } }) : apiError(c, 'Sign in required', 401);
+	return session ? c.json({ user: { id: session.sub, username: session.username, role: session.role } }) : c.json({ user: null });
 });
 app.get('/api/auth/username-availability', async (c) => {
 	const username = c.req.query('username')?.trim().toLowerCase() ?? '';
