@@ -1,67 +1,59 @@
 # heyIssac
 
-heyIssac is a small-business growth companion built as a Cloudflare Worker app. It gives non-technical founders a calm weekly place to understand what people can find, what is missing, and what next action is worth doing.
+heyIssac is a small business's living office: it reads the public website, finds a few evidence-backed market alternatives, explains how clearly the offer can be understood through search and AI answers, and suggests practical next steps. Paid offices can receive a weekly site and market pulse. It never publishes on the user's behalf and never invents activity or results.
 
-## Why This App Exists
+## Why This Exists
 
-Small businesses often know they should improve marketing, search visibility, website clarity, and public conversation, but the work arrives as noise. heyIssac turns that noise into a short list. The goal is not to automate the founder out of the loop; the goal is to make the next useful move easier to see.
+Marketing advice can feel like a pile of disconnected tools: search rankings in one place, AI-answer visibility in another, competitor research somewhere else, and draft copy in a fourth. heyIssac brings one useful first read and later evidence-backed updates into a single, approachable office so owners can see what changed and decide what to do next.
 
-## What It Solves
+The product should feel like tending a small business, not operating a technical console. Its eventual animated office is a presentation layer for real work states and real findings. It must not manufacture activity, rankings, news, or customer metrics. The current version uses ordinary dashboard and report screens; the polished 2D character animation is deliberately deferred to a separate design and engineering pass. Scheduled checks are weekly, not continuous.
 
-heyIssac helps users:
+## What Is Included
 
-- Check whether their public website and discovery signals are clear.
-- Rank small growth actions by usefulness.
-- Keep recommendations understandable without requiring marketing vocabulary.
-- Hold final approval before public content, edits, or promises are made.
-- Return to a weekly rhythm instead of starting from scratch each time.
+- First Visit: $9 once for one complete report on one root website. It has no recurring monitoring or later refresh.
+- Starter: $19/month for one office; Studio: $49/month for three offices; Partner: $99/month for eight offices. Each office receives one full report per billing period and up to four weekly site/market pulses during that period. Partner can add three offices for $8/month.
+- A full report combines public-site reading, a few possible competitors from search, search discoverability and AI-answer readability observations, and practical next steps plus draft social posts. Candidate competitors are not described as confirmed without evidence. Search positions are only reported when observed in returned search results; GEO is not represented as a guaranteed ranking score.
+- Push and Max remain optional model upgrades in the existing run flow; they do not increase the included office count or monitoring cadence. Their add-on pricing and model-cost guardrails must be configured and verified before they are offered as purchasable features.
 
-## How It Reduces Stress
+The subscription quantities above are product entitlements encoded in this implementation, not provider query counts. The first full report uses that office's billing-period report allowance; another becomes available at renewal. A weekly pulse is a smaller scheduled check, capped at four per office per billing period, and does not consume the full-report allowance. Provider calls and model requests remain implementation details and require operational limits so the app's cost stays bounded.
 
-The app reduces stress by gathering scattered signals into one familiar workspace. It uses simple language, short lists, visible progress, and account recovery options so users feel oriented instead of trapped inside technical settings. The interface is designed to behave like a practical shop shelf: see what is present, notice what is missing, and choose the next item to handle.
+## Account and Safety
 
-## Why It Is Unique
+Sign-up uses a unique username and a 7-18 character password with at least one letter and one digit. The password is PBKDF2-SHA-256 hashed using the Workers Web Crypto API. Sign-in uses username and password only. Users may set up an 8-character lowercase-alphanumeric recovery passcode, an authenticator (TOTP), or both. TOTP setup is verified before saving. Recovery is a standalone signed-out page; it shows only methods enabled on that account and permits a password reset only after one method verifies. Security controls are available after sign-in. Sessions use a Secure, HttpOnly cookie for 35 days. API-only sign-up and sign-in are supported alongside the UI.
 
-heyIssac combines growth diagnosis, ranked action planning, public evidence, and human approval in a small-business-first interface. It is intentionally lighter than a full enterprise SEO or marketing suite, but more practical than a generic chatbot because it has account structure, recovery, workspace context, and API-first auth ready for future agentic or MCP clients.
+## Technical Design
 
-## Auth And Security Baseline
+- React Router + React, built by Vite for Cloudflare Workers.
+- Hono API routes in the same Worker.
+- Cloudflare D1 for accounts, workspaces, projects/offices, reports, actions, evidence, usage, billing records, and provider quota ledger.
+- Durable Object alarm for asynchronous report execution.
+- OpenRouter for report synthesis and diagnosis; model requests are recorded per run with request IDs, token counts, and provider cost when returned.
+- Exa, Tavily, and Firecrawl pools: ten free-account slots plus one separate paid-tier slot per provider. Free slots are preferred. Tavily's plan allowance and Firecrawl's remaining credits are checked before use; the Firecrawl paid slot is additionally capped by its monthly plan allocation and current-period usage, excluding purchased credit balance. Exa is budgeted by a local estimate because this implementation cannot query an authoritative live Exa balance. Exa reset dates are configured individually.
+- Stripe Checkout for subscriptions and the one-time brief. Stripe products/prices and webhook setup must exist in the Stripe account before checkout is available.
 
-The app uses username-first authentication. Username and password are the only required signup fields. Recovery email, authenticator setup, security questions, and passcode are optional recovery methods. Passwords and passcodes are hashed server-side with a Cloudflare Worker-compatible Web Crypto flow. Sessions are issued as signed JWTs in secure HttpOnly cookies.
+## Deployment Checklist
 
-## Agent and billing readiness
+1. Create a new D1 database and apply every SQL migration in order.
+2. Add the Worker secrets listed in `.env.example` to the Cloudflare Worker. Never commit `.env` or paste secret values into chat or logs.
+3. Configure each Exa reset date using an ISO-8601 UTC timestamp. The local Exa meter is an estimate, not provider-confirmed remaining credit.
+4. Create Stripe prices for $19, $49, $99 monthly, $9 one-time, and optional $8/month Partner office expansion. Set the matching price IDs and webhook secret in the Worker configuration.
+5. Set the Stripe webhook endpoint to `/api/stripe/webhook` and subscribe to Checkout completion and subscription update/deletion events.
+6. Deploy and complete a small real paid end-to-end run before inviting users.
 
-The Worker exposes an API-first run loop. A run is owned by the authenticated workspace and receives a random `run_id`; every provider call receives a child `request_id`, with provider request/generation IDs, token usage, provider cost, and status stored in D1. Evidence is stored as run-scoped snapshots, and result retrieval always filters by both `run_id` and workspace membership. Browser sessions use a 28-day signed JWT HttpOnly cookie; agent and MCP clients can use a revocable, hashed bearer token created from Security.
+## Important Current Boundaries
 
-The default model is included in the selected plan. `push` and `max` are usage-priced upgrades using the model catalog in `src/index.ts`. Stripe Checkout handles top-ups of at least $3, and a signature-verified webhook credits the workspace wallet exactly once. Provider usage is measured from the OpenRouter response, and the server applies the 1.4 multiplier before recording the charge. Wallet debit and its ledger row are committed as one D1 batch; the browser never calculates or authorizes a charge.
+- The $9 report is queued after a verified paid Stripe webhook; configure D1, the Durable Object, OpenRouter, search credentials, and Stripe before it can complete.
+- Weekly checks are opt-in per office and run through the Worker Cron trigger. The first scheduled check establishes a real baseline; subsequent checks save only actual site changes and returned market sources.
+- The office feed and source viewing are implemented. Ask Issac provides a bounded number of evidence-only answers per workspace billing period; it does not launch new web searches for each question.
+- The animated office and per-business character/room variations are deferred to a separate design/engineering pass. The target is a reusable 2D sprite/state system, not a large prebuilt asset library.
+- The on-page plan quota needs reconciliation against actual Stripe billing periods and thorough webhook idempotency review before production launch.
+- Do not display estimated provider usage as a live account balance, and do not show invented metrics as real findings.
 
-Each run moves through `queued`, `running`, and `completed` or `failed`. The request persists the objective, geography, competitors, and keywords in D1, then schedules a per-run Durable Object alarm. The alarm reconstructs the job from D1, survives Worker restarts, and keeps the browser free to poll or leave the page. The Worker performs a search stage with Exa as the preferred provider and Tavily/Brave fallback when configured, up to five bounded Firecrawl page reads, evidence deduplication, a diagnosis stage, a planning/ranking stage, and a single repair attempt for malformed model JSON. Search positions are retained as measured rank checks; GEO visibility is recorded separately and is never invented when it was not measured. Runs are limited to 20 per workspace per rolling day and two active runs at once. Failed runs remove partial actions and evidence so the List only shows complete recommendations.
+## Fountain-Over-Tap Direction
 
-Projects, runs, evidence, actions, profiles, wallets, subscription state, and API tokens are persisted in D1. Actions can be approved, dismissed, completed, or published from the List. Subscription tier access is checked server-side against the workspace plan and active, trialing, or canceling status, while the UI reflects the same entitlement. A paid subscription can be canceled at period end and re-enabled before that period ends; Stripe webhooks keep the D1 state authoritative.
-
-Required integration secrets before live agent runs: `OPENROUTER_API_KEY`, one search provider key (`EXA_API_KEY`, `TAVILY_API_KEY`, or `BRAVE_SEARCH_API_KEY`), and `FIRECRAWL_API_KEY` for page reading. Required payment secrets before top-ups and subscription lifecycle changes: `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`. Without them, the app keeps auth and read-only catalog/health behavior available and reports the missing capability clearly.
-
-## Design Notes
-
-The current visual direction follows a user-friendly, cozy, practical style rather than a technical dashboard. Current Apple Human Interface Guidelines emphasize persistent top-level navigation, a small number of clear destinations, recognizable symbols, and layouts that adapt across compact and regular screen sizes. The mobile app navigation therefore uses symbols for the tabs while preserving accessible names.
-
-Glassmorphism and brick-like systems can be considered for future themes, but the current implementation keeps the design warmer, clearer, and easier to read for ordinary business users.
-
-## Domain Search
-
-Namecheap availability was checked for the heyIssac name on September 2, 2026. Available domains at or below 18 USD/year:
-
-- heyissac.com - 10.98 USD/year
-- heyissac.net - 11.98 USD/year
-- heyissac.org - 7.98 USD/year
-- heyissac.app - 6.98 USD/year
-- heyissac.co - 7.98 USD/year
-- hey-issac.com - 10.98 USD/year
-- hey-issac.net - 11.98 USD/year
-- hey-issac.org - 7.98 USD/year
-- hey-issac.app - 6.98 USD/year
-- hey-issac.co - 7.98 USD/year
-
-Excluded because over 18 USD/year:
-
-- heyissac.io - 34.98 USD/year
-- hey-issac.io - 34.98 USD/year
+- Keep monthly plans; the product's weekly rhythm is the office pulse, not a weekly subscription. Each office gets one complete report per billing period and at most four weekly pulses. A separate $9 report is an explicit purchase, not an automatic overage. Push and Max change the full-report model only; saved-evidence questions use the plan model and do not trigger a web search.
+- The later animated office should be a detailed, readable 2D room with the composed environment of the third supplied reference and the character scale/detail of the second. Do not build the first reference's schematic boxes as the animation.
+- Render motion in the open browser with a small reusable sprite/room kit. Vary the room using a stable palette, furniture, props, and a small set of character accessories selected from the real site category and its visible content; a booking service and a pet-food shop should not look identical. Use a neutral room if classification is uncertain. This is modular art direction, not a huge pre-made asset library.
+- Keep the monitored website's character and helpers on a cooperative office team. Competitors are sourced market notes on a board, not invented rival characters or a battle scene. A character may report a saved, cited update when a real check finds something; never stage work just to keep the room busy.
+- The Worker schedules checks and writes actual state to D1; it does not render animation frames. The browser animates locally while visible, pauses when hidden, and respects reduced-motion settings. A decorative idle loop must not imply a check or market event occurred.
+- Refund policy recommendation, not yet implemented: offer a seven-day refund on the first subscription payment or a $9 report when processing has not begun; if a paid report fails and cannot be delivered after a retry within 24 hours, refund it in full regardless of that window. Publish final terms only after local legal review and implement refund operations before presenting them as an active guarantee.
