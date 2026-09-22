@@ -1,0 +1,80 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - button "heyIssac heyIssac" [ref=e5] [cursor=pointer]:
+      - img "heyIssac" [ref=e6]
+      - generic [ref=e7]: heyIssac
+    - navigation [ref=e8]:
+      - button "Pricing" [ref=e9] [cursor=pointer]: $Pricing
+      - button "About" [ref=e10] [cursor=pointer]: iAbout
+    - button "Sign in ↗" [ref=e11] [cursor=pointer]
+  - main [ref=e12]:
+    - generic [ref=e13]: Pricing
+    - heading "Pay for a clearer rhythm, not an unfamiliar meter." [level=1] [ref=e14]
+    - paragraph [ref=e15]: Your subscription covers the normal heyIssac workflow for your plan. A balance is only for a stronger model or deeper work you choose on purpose.
+    - generic [ref=e16]:
+      - article [ref=e17]:
+        - generic [ref=e18]: Starter
+        - heading "$19/month" [level=2] [ref=e19]
+        - paragraph [ref=e20]: For one founder building a repeatable growth habit.
+        - list [ref=e21]:
+          - listitem [ref=e22]: ✓1 business workspace
+          - listitem [ref=e23]: ✓Default diagnosis model
+          - listitem [ref=e24]: ✓Saved evidence and action history
+          - listitem [ref=e25]: ✓Approval before public work
+        - button "Start Starter" [ref=e26] [cursor=pointer]
+      - article [ref=e27]:
+        - generic [ref=e28]: Studio
+        - generic [ref=e29]: Most useful
+        - heading "$49/month" [level=2] [ref=e30]
+        - paragraph [ref=e31]: For a small team making regular decisions together.
+        - list [ref=e32]:
+          - listitem [ref=e33]: ✓Studio default diagnosis model
+          - listitem [ref=e34]: ✓Website and discovery checks
+          - listitem [ref=e35]: ✓Saved drafts and ranked actions
+          - listitem [ref=e36]: ✓Room for repeatable reviews
+        - button "Start Studio →" [ref=e37] [cursor=pointer]
+      - article [ref=e38]:
+        - generic [ref=e39]: Partner
+        - heading "$99/month" [level=2] [ref=e40]
+        - paragraph [ref=e41]: For an operator holding several brands in motion.
+        - list [ref=e42]:
+          - listitem [ref=e43]: ✓Partner default diagnosis model
+          - listitem [ref=e44]: ✓Priority evidence refreshes
+          - listitem [ref=e45]: ✓Approval-ready content drafts
+          - listitem [ref=e46]: ✓Export-ready run records
+        - button "Start Partner" [ref=e47] [cursor=pointer]
+    - generic [ref=e48]:
+      - generic [ref=e49]:
+        - generic [ref=e50]: How billing stays simple
+        - heading "The normal route is included. The stronger route is a choice." [level=2] [ref=e51]
+      - list [ref=e52]:
+        - listitem [ref=e53]:
+          - generic [ref=e54]: "1"
+          - generic [ref=e55]:
+            - strong [ref=e56]: Subscribe for the everyday work
+            - paragraph [ref=e57]: Your plan uses its normal model for the regular check-and-list workflow.
+        - listitem [ref=e58]:
+          - generic [ref=e59]: "2"
+          - generic [ref=e60]:
+            - strong [ref=e61]: Add a balance only when you want extra power
+            - paragraph [ref=e62]: Top up at least $3 before choosing Push or Max for a run.
+        - listitem [ref=e63]:
+          - generic [ref=e64]: "3"
+          - generic [ref=e65]:
+            - strong [ref=e66]: Receive a receipt after the upgraded run
+            - paragraph [ref=e67]: heyIssac records the provider cost, applies the stated 1.4 service multiplier, then shows the amount deducted from your balance.
+    - generic [ref=e68]:
+      - generic [ref=e69]: Recommended next addition
+      - heading "A follow-up assistant should feel included, until someone asks for more." [level=2] [ref=e70]
+      - paragraph [ref=e71]: We recommend a small, clearly stated monthly allowance for short questions about a saved run using the plan's normal model. After that allowance, or when someone chooses Push or Max, the conversation uses their balance. This keeps everyday help approachable without hiding open-ended model cost inside the subscription.
+    - paragraph [ref=e72]: The follow-up assistant policy is a product recommendation, not a live feature yet. Push and Max remain opt-in, and publishing stays in the user's hands.
+  - contentinfo [ref=e73]:
+    - generic [ref=e74]:
+      - button "heyIssac heyIssac" [ref=e75] [cursor=pointer]:
+        - img "heyIssac" [ref=e76]
+        - generic [ref=e77]: heyIssac
+      - paragraph [ref=e78]: A calmer way to grow a good business.
+    - generic [ref=e79]:
+      - button "Pricing" [ref=e80] [cursor=pointer]
+      - button "About" [ref=e81] [cursor=pointer]
+    - generic [ref=e82]: © 2026 heyIssac

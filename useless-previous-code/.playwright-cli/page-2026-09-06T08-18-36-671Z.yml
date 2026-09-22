@@ -1,0 +1,81 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - button "heyIssac heyIssac" [ref=e5] [cursor=pointer]:
+      - img "heyIssac" [ref=e6]
+      - generic [ref=e7]: heyIssac
+    - navigation [ref=e8]:
+      - button "Pricing" [ref=e9] [cursor=pointer]
+      - button "About" [ref=e10] [cursor=pointer]
+    - button "Sign in ↗" [ref=e11] [cursor=pointer]
+  - main [ref=e12]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]: A kinder way to grow
+        - heading "Put your best work where people can find it." [level=1] [ref=e16]
+        - paragraph [ref=e17]: "heyIssac turns the noisy work of being found online into a clear weekly rhythm: see what is missing, understand why it matters, and choose the next useful thing."
+        - button "Start my free list →" [ref=e18] [cursor=pointer]
+        - generic [ref=e19]: No credit card. No marketing jargon.
+      - generic "A preview of your weekly growth list" [ref=e20]:
+        - generic [ref=e21]:
+          - generic [ref=e22]: THIS WEEK
+          - generic [ref=e23]: 3 useful things
+        - generic [ref=e24]:
+          - generic [ref=e25]: ✓
+          - generic [ref=e26]:
+            - generic [ref=e27]: Make your welcome clearer
+            - generic [ref=e28]: Help the right people know they belong here.
+        - generic [ref=e31]:
+          - generic [ref=e32]: Answer one real question
+          - generic [ref=e33]: Be helpful where people are already looking.
+        - generic [ref=e36]:
+          - generic [ref=e37]: Name your best work
+          - generic [ref=e38]: Make it easier to remember and share.
+        - generic [ref=e39]:
+          - generic [ref=e40]: Small jobs
+          - strong [ref=e41]: Real progress
+    - generic [ref=e42]:
+      - generic [ref=e43]: The week, made visible
+      - heading "Marketing is a shelf, not a fire." [level=2] [ref=e44]
+      - paragraph [ref=e45]: Most small teams do not need more dashboards. They need to know which shelf is bare, what to put on it, and whether the people who matter can see it.
+    - generic [ref=e46]:
+      - article [ref=e47]:
+        - text: "01"
+        - heading "Find the gaps" [level=3] [ref=e48]
+        - paragraph [ref=e49]: Check your website, search presence, and public conversations for the things that quietly cost you trust.
+      - article [ref=e50]:
+        - text: "02"
+        - heading "Choose the useful work" [level=3] [ref=e51]
+        - paragraph [ref=e52]: Get a ranked list that respects your time, your voice, and the difference between a quick win and a real project.
+      - article [ref=e53]:
+        - text: "03"
+        - heading "Keep the final say" [level=3] [ref=e54]
+        - paragraph [ref=e55]: Review every recommendation before it becomes a public post, page, or promise.
+    - generic [ref=e56]:
+      - generic [ref=e57]:
+        - generic [ref=e58]: Inside your weekly shop
+        - heading "Everything you need for the next good move." [level=2] [ref=e59]
+        - paragraph [ref=e60]: Bring your website and your context. heyIssac gives you a practical view of what people see, what they miss, and what is worth doing next.
+        - button "How it works →" [ref=e61] [cursor=pointer]
+      - generic [ref=e62]:
+        - generic [ref=e63]:
+          - strong [ref=e64]: Website
+          - generic [ref=e65]: Clearer pages and stronger first impressions
+          - generic [ref=e66]: 84%
+        - generic [ref=e67]:
+          - strong [ref=e68]: Discovery
+          - generic [ref=e69]: Show up for the words your customers use
+          - generic [ref=e70]: 61%
+        - generic [ref=e71]:
+          - strong [ref=e72]: Conversations
+          - generic [ref=e73]: Helpful answers in the places people gather
+          - generic [ref=e74]: 72%
+  - contentinfo [ref=e75]:
+    - generic [ref=e76]:
+      - button "heyIssac heyIssac" [ref=e77] [cursor=pointer]:
+        - img "heyIssac" [ref=e78]
+        - generic [ref=e79]: heyIssac
+      - paragraph [ref=e80]: A calmer way to grow a good business.
+    - generic [ref=e81]:
+      - button "Pricing" [ref=e82] [cursor=pointer]
+      - button "About" [ref=e83] [cursor=pointer]
+    - generic [ref=e84]: © 2026 heyIssac

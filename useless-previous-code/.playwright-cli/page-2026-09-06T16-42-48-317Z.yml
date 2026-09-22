@@ -1,0 +1,85 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - button "heyIssac heyIssac" [ref=e5] [cursor=pointer]:
+      - img "heyIssac" [ref=e6]
+      - generic [ref=e7]: heyIssac
+    - navigation [ref=e8]:
+      - button "Pricing" [ref=e9] [cursor=pointer]: $Pricing
+      - button "About" [ref=e10] [cursor=pointer]: iAbout
+    - button "Sign in ↗" [ref=e11] [cursor=pointer]
+  - main [ref=e12]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]: Growth, made easier to hold
+        - heading "Start with a URL. Leave with a clear next move." [level=1] [ref=e16]
+        - paragraph [ref=e17]: heyIssac searches public evidence, reads reachable pages, and turns what it finds into a short list you can actually use.
+        - button "Build my first list →" [ref=e18] [cursor=pointer]
+        - generic [ref=e19]: Use a public website and a plain-language question.
+      - generic "Example of an initial heyIssac result for trustmrr.com" [ref=e20]:
+        - generic [ref=e21]:
+          - generic [ref=e22]: FIRST CHECK
+          - generic [ref=e23]: trustmrr.com
+        - generic [ref=e24]:
+          - generic [ref=e25]: "1"
+          - generic [ref=e26]:
+            - generic [ref=e27]: Evidence receipt
+            - generic [ref=e28]: See the public pages and search results that shaped the diagnosis.
+        - generic [ref=e29]:
+          - generic [ref=e30]: "2"
+          - generic [ref=e31]:
+            - generic [ref=e32]: Discovery read
+            - generic [ref=e33]: Keep measured search positions separate from unknown visibility.
+        - generic [ref=e34]:
+          - generic [ref=e35]: "3"
+          - generic [ref=e36]:
+            - generic [ref=e37]: Next action shelf
+            - generic [ref=e38]: Take one useful action without losing the context behind it.
+        - generic [ref=e39]:
+          - generic [ref=e40]: Clear evidence
+          - strong [ref=e41]: Practical next steps
+    - generic [ref=e42]:
+      - generic [ref=e43]: Your first visit
+      - heading "One question in. One useful list out." [level=2] [ref=e44]
+      - paragraph [ref=e45]: Give heyIssac a public URL, the audience or place you care about, and the question sitting on your mind. It does the gathering, then gives you the work back in ordinary language.
+    - generic [ref=e46]:
+      - article [ref=e47]:
+        - text: "01"
+        - heading "Bring the question" [level=3] [ref=e48]
+        - paragraph [ref=e49]: Paste your website and name the result you want to understand. Add a place, search phrases, or competitors when they matter.
+      - article [ref=e50]:
+        - text: "02"
+        - heading "Get an evidence-backed read" [level=3] [ref=e51]
+        - paragraph [ref=e52]: Receive a summary, public evidence receipt, measured discovery checks, GEO limits, and a ranked action list.
+      - article [ref=e53]:
+        - text: "03"
+        - heading "Keep the useful work" [level=3] [ref=e54]
+        - paragraph [ref=e55]: Approve, dismiss, complete, or revisit actions. Run another focused check when your business changes.
+    - generic [ref=e56]:
+      - generic [ref=e57]:
+        - generic [ref=e58]: After the first result
+        - heading "The work does not disappear when the check is done." [level=2] [ref=e59]
+        - paragraph [ref=e60]: Your saved runs hold the evidence, recommendations, drafts, and decisions together. That means a later refresh begins with context instead of another blank page.
+        - button "See the full journey →" [ref=e61] [cursor=pointer]
+      - generic [ref=e62]:
+        - generic [ref=e63]:
+          - strong [ref=e64]: Review
+          - generic [ref=e65]: Open the saved evidence behind a recommendation
+          - generic [ref=e66]: Today
+        - generic [ref=e67]:
+          - strong [ref=e68]: Decide
+          - generic [ref=e69]: Approve, dismiss, or complete the next action
+          - generic [ref=e70]: Your call
+        - generic [ref=e71]:
+          - strong [ref=e72]: Refresh
+          - generic [ref=e73]: Ask a new question when the market or site changes
+          - generic [ref=e74]: When needed
+  - contentinfo [ref=e75]:
+    - generic [ref=e76]:
+      - button "heyIssac heyIssac" [ref=e77] [cursor=pointer]:
+        - img "heyIssac" [ref=e78]
+        - generic [ref=e79]: heyIssac
+      - paragraph [ref=e80]: A calmer way to grow a good business.
+    - generic [ref=e81]:
+      - button "Pricing" [ref=e82] [cursor=pointer]
+      - button "About" [ref=e83] [cursor=pointer]
+    - generic [ref=e84]: © 2026 heyIssac

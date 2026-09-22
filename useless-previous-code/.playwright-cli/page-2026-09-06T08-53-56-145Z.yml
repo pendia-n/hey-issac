@@ -1,0 +1,73 @@
+- generic [ref=e89]:
+  - button "← Back to heyIssac" [ref=e90] [cursor=pointer]
+  - img "heyIssac" [ref=e91]
+  - generic [ref=e92]: Welcome to heyIssac
+  - heading "Put your growth on the list." [level=1] [ref=e93]
+  - paragraph [ref=e94]: A calm, friendly place for the next useful step in your business.
+  - generic [ref=e95]:
+    - generic [ref=e96]: Username
+    - textbox "Username" [ref=e97]
+    - paragraph [ref=e98]: Choose a public username.
+    - generic [ref=e99]: Password
+    - textbox "Password" [ref=e100]
+    - generic [ref=e101]:
+      - generic [ref=e102]: 7-18 characters
+      - generic [ref=e103]: letter
+      - generic [ref=e104]: digit
+    - generic [ref=e105]:
+      - heading "Recovery options" [level=2] [ref=e106]
+      - paragraph [ref=e107]: Optional, but one method helps you get back in without support.
+      - generic [ref=e108]: Recovery email
+      - textbox "Recovery email" [ref=e109]:
+        - /placeholder: name@gmail.com or name@hotmail.com
+      - paragraph [ref=e110]: Gmail or Hotmail only. It does not need to be unique.
+      - generic [ref=e111]: Recovery passcode
+      - textbox "Recovery passcode" [ref=e112]:
+        - /placeholder: 8 lowercase letters or digits
+      - paragraph [ref=e113]: Exactly 8 lowercase letters or digits.
+      - generic [ref=e114]:
+        - generic [ref=e115]:
+          - generic [ref=e116]: Security question 1
+          - combobox [ref=e117]:
+            - option "Choose a question" [selected]
+            - option "What was the name of your first school?"
+            - option "What street did you grow up on?"
+            - option "What was the name of your first manager or teacher?"
+            - option "What was the name of your first pet?"
+            - option "What city did your parents meet in?"
+            - option "What was the first concert or live event you attended?"
+            - option "What was the name of your childhood best friend?"
+            - option "What was the model of your first phone?"
+            - option "What was your favorite place to visit as a child?"
+            - option "What was the first dish you learned to cook?"
+            - option "What was the name of the first company you worked for?"
+            - option "What nickname did your family use for you?"
+            - option "What was the first book you remember loving?"
+            - option "What was the name of your favorite childhood game?"
+            - option "What was the first username or screen name you used?"
+          - textbox "Your answer" [ref=e118]
+        - generic [ref=e119]:
+          - generic [ref=e120]: Security question 2
+          - combobox [ref=e121]:
+            - option "Choose a question" [selected]
+            - option "What was the name of your first school?"
+            - option "What street did you grow up on?"
+            - option "What was the name of your first manager or teacher?"
+            - option "What was the name of your first pet?"
+            - option "What city did your parents meet in?"
+            - option "What was the first concert or live event you attended?"
+            - option "What was the name of your childhood best friend?"
+            - option "What was the model of your first phone?"
+            - option "What was your favorite place to visit as a child?"
+            - option "What was the first dish you learned to cook?"
+            - option "What was the name of the first company you worked for?"
+            - option "What nickname did your family use for you?"
+            - option "What was the first book you remember loving?"
+            - option "What was the name of your favorite childhood game?"
+            - option "What was the first username or screen name you used?"
+          - textbox "Your answer" [ref=e122]
+      - button "Set authenticator now" [ref=e124] [cursor=pointer]
+    - button "Create my account →" [ref=e125] [cursor=pointer]
+  - generic [ref=e126]:
+    - button "Already have an account? Sign in" [ref=e127] [cursor=pointer]
+    - button "Forgot password?" [ref=e128] [cursor=pointer]

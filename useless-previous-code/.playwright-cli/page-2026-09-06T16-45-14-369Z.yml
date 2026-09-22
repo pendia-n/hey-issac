@@ -1,0 +1,60 @@
+- generic [ref=e165]:
+  - banner [ref=e166]:
+    - button "heyIssac heyIssac" [ref=e167] [cursor=pointer]:
+      - img "heyIssac" [ref=e168]
+      - generic [ref=e169]: heyIssac
+    - navigation [ref=e170]:
+      - button "Pricing" [ref=e171] [cursor=pointer]: $Pricing
+      - button "About" [ref=e172] [cursor=pointer]: iAbout
+    - button "Sign in ↗" [ref=e173] [cursor=pointer]
+  - main [ref=e174]:
+    - generic [ref=e175]: About heyIssac
+    - heading "Good work deserves a clearer path to the people looking for it." [level=1] [ref=e176]
+    - generic [ref=e177]:
+      - generic [ref=e178]:
+        - paragraph [ref=e179]: heyIssac is a small-business growth companion for the part after "we should probably market this" and before "why did we publish that?"
+        - button "Build my first list →" [ref=e180] [cursor=pointer]
+      - generic [ref=e181]:
+        - paragraph [ref=e182]: We believe marketing should feel more like tending a shop than shouting into a crowd. You look at what is on the shelf, notice what is missing, and make one thoughtful improvement.
+        - paragraph [ref=e183]: Our job is to gather public evidence, explain it in ordinary language, and help you decide. The software can check, compare, rank, and draft. You remain the person who knows what is true.
+    - generic [ref=e184]:
+      - generic [ref=e185]: A first run, in plain language
+      - heading "Imagine you add trustmrr.com." [level=2] [ref=e186]
+      - generic [ref=e187]:
+        - generic [ref=e188]:
+          - generic [ref=e189]: Before
+          - strong [ref=e190]: You name the public URL and the question you need answered.
+          - paragraph [ref=e191]: Add a geography, keywords, or competitors only when they help the check.
+        - generic [ref=e192]:
+          - generic [ref=e193]: During
+          - strong [ref=e194]: heyIssac searches, reads reachable public pages, diagnoses, and ranks.
+          - paragraph [ref=e195]: It keeps sources, measured positions, and unknowns distinct.
+        - generic [ref=e196]:
+          - generic [ref=e197]: After
+          - strong [ref=e198]: You receive a saved evidence receipt and a short action shelf.
+          - paragraph [ref=e199]: Review the reasoning, decide what moves forward, then return when the next question arrives.
+    - generic [ref=e200]:
+      - generic [ref=e201]:
+        - generic [ref=e202]: What comes after initial
+        - heading "A saved run is the beginning of a useful conversation." [level=2] [ref=e203]
+      - paragraph [ref=e204]: "The current app lets people revisit results, change action status, and run focused refreshes. The next recommended capability is a scoped follow-up assistant: it should discuss one saved run and its evidence, rather than act like an empty general chatbot. Everyday follow-ups should use the plan model; deeper, optional work should use a balance-funded model upgrade."
+    - generic [ref=e205]:
+      - generic [ref=e206]:
+        - strong [ref=e207]: Evidence before confidence.
+        - text: Recommendations should point to what was actually observed.
+      - generic [ref=e208]:
+        - strong [ref=e209]: Useful before impressive.
+        - text: A short list you finish beats an endless feed you ignore.
+      - generic [ref=e210]:
+        - strong [ref=e211]: People before autopilot.
+        - text: Your voice and approval stay part of the loop.
+  - contentinfo [ref=e212]:
+    - generic [ref=e213]:
+      - button "heyIssac heyIssac" [ref=e214] [cursor=pointer]:
+        - img "heyIssac" [ref=e215]
+        - generic [ref=e216]: heyIssac
+      - paragraph [ref=e217]: A calmer way to grow a good business.
+    - generic [ref=e218]:
+      - button "Pricing" [ref=e219] [cursor=pointer]
+      - button "About" [ref=e220] [cursor=pointer]
+    - generic [ref=e221]: © 2026 heyIssac

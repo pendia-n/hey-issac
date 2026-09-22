@@ -1,0 +1,83 @@
+- generic [ref=f2e3]:
+  - banner [ref=f2e4]:
+    - button "heyIssac heyIssac" [ref=f2e5] [cursor=pointer]:
+      - img "heyIssac" [ref=f2e6]
+      - generic [ref=f2e7]: heyIssac
+    - navigation [ref=f2e8]:
+      - button "Pricing" [ref=f2e9] [cursor=pointer]:
+        - generic [aria-hidden] [ref=f2e10]: $
+      - button "About" [ref=f2e11] [cursor=pointer]:
+        - generic [aria-hidden] [ref=f2e12]: i
+    - button "Sign in ↗" [ref=f2e13] [cursor=pointer]
+  - main [ref=f2e14]:
+    - generic [ref=f2e15]:
+      - generic [ref=f2e16]:
+        - generic [ref=f2e17]: A kinder way to grow
+        - heading "Put your best work where people can find it." [level=1] [ref=f2e18]
+        - paragraph [ref=f2e19]: "heyIssac turns the noisy work of being found online into a clear weekly rhythm: see what is missing, understand why it matters, and choose the next useful thing."
+        - button "Start my free list →" [ref=f2e20] [cursor=pointer]
+        - generic [ref=f2e21]: No credit card. No marketing jargon.
+      - generic "A preview of your weekly growth list" [ref=f2e22]:
+        - generic [ref=f2e23]:
+          - generic [ref=f2e24]: THIS WEEK
+          - generic [ref=f2e25]: 3 useful things
+        - generic [ref=f2e26]:
+          - generic [ref=f2e27]: ✓
+          - generic [ref=f2e28]:
+            - generic [ref=f2e29]: Make your welcome clearer
+            - generic [ref=f2e30]: Help the right people know they belong here.
+        - generic [ref=f2e33]:
+          - generic [ref=f2e34]: Answer one real question
+          - generic [ref=f2e35]: Be helpful where people are already looking.
+        - generic [ref=f2e38]:
+          - generic [ref=f2e39]: Name your best work
+          - generic [ref=f2e40]: Make it easier to remember and share.
+        - generic [ref=f2e41]:
+          - generic [ref=f2e42]: Small jobs
+          - strong [ref=f2e43]: Real progress
+    - generic [ref=f2e44]:
+      - generic [ref=f2e45]: The week, made visible
+      - heading "Marketing is a shelf, not a fire." [level=2] [ref=f2e46]
+      - paragraph [ref=f2e47]: Most small teams do not need more dashboards. They need to know which shelf is bare, what to put on it, and whether the people who matter can see it.
+    - generic [ref=f2e48]:
+      - article [ref=f2e49]:
+        - text: "01"
+        - heading "Find the gaps" [level=3] [ref=f2e50]
+        - paragraph [ref=f2e51]: Check your website, search presence, and public conversations for the things that quietly cost you trust.
+      - article [ref=f2e52]:
+        - text: "02"
+        - heading "Choose the useful work" [level=3] [ref=f2e53]
+        - paragraph [ref=f2e54]: Get a ranked list that respects your time, your voice, and the difference between a quick win and a real project.
+      - article [ref=f2e55]:
+        - text: "03"
+        - heading "Keep the final say" [level=3] [ref=f2e56]
+        - paragraph [ref=f2e57]: Review every recommendation before it becomes a public post, page, or promise.
+    - generic [ref=f2e58]:
+      - generic [ref=f2e59]:
+        - generic [ref=f2e60]: Inside your weekly shop
+        - heading "Everything you need for the next good move." [level=2] [ref=f2e61]
+        - paragraph [ref=f2e62]: Bring your website and your context. heyIssac gives you a practical view of what people see, what they miss, and what is worth doing next.
+        - button "How it works →" [ref=f2e63] [cursor=pointer]
+      - generic [ref=f2e64]:
+        - generic [ref=f2e65]:
+          - strong [ref=f2e66]: Website
+          - generic [ref=f2e67]: Clearer pages and stronger first impressions
+          - generic [ref=f2e68]: 84%
+        - generic [ref=f2e69]:
+          - strong [ref=f2e70]: Discovery
+          - generic [ref=f2e71]: Show up for the words your customers use
+          - generic [ref=f2e72]: 61%
+        - generic [ref=f2e73]:
+          - strong [ref=f2e74]: Conversations
+          - generic [ref=f2e75]: Helpful answers in the places people gather
+          - generic [ref=f2e76]: 72%
+  - contentinfo [ref=f2e77]:
+    - generic [ref=f2e78]:
+      - button "heyIssac heyIssac" [ref=f2e79] [cursor=pointer]:
+        - img "heyIssac" [ref=f2e80]
+        - generic [ref=f2e81]: heyIssac
+      - paragraph [ref=f2e82]: A calmer way to grow a good business.
+    - generic [ref=f2e83]:
+      - button "Pricing" [ref=f2e84] [cursor=pointer]
+      - button "About" [ref=f2e85] [cursor=pointer]
+    - generic [ref=f2e86]: © 2026 heyIssac
