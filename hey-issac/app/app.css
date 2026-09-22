@@ -37,5 +37,5 @@ body { background: var(--paper); }
 .competitor-candidates a { min-width: 160px; overflow-wrap: anywhere; color: var(--leaf); font-weight: 700; }
 .competitor-candidates .receipt-line span { color: var(--muted); max-width: 520px; font-size: 12px; }
 @media (min-width: 961px) { .price-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } .price-grid article { padding: 25px 21px; } }
-@media (max-width: 760px) { .time-mode-toggle { top: auto; bottom: 14px; right: 14px; } }
+@media (max-width: 760px) { .time-mode-toggle { position: static; margin: 14px 14px 14px auto; box-shadow: none; } }
 @media (max-width: 760px) { .public-site .landing-copy h1 { font-size: 52px; } }
