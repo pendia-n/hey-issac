@@ -274,12 +274,13 @@ async function candidatesFor(
   db: D1Database,
   env: Record<string, unknown>,
   now: Date,
+  tier: "free" | "paid" | "all" = "all",
 ): Promise<KeyCandidate[]> {
   const named = labels(provider).map((label, index) => ({
     label,
     value: env[label],
     paid: index === FREE_KEY_COUNT,
-  }));
+  })).filter(({ paid }) => tier === "all" || paid === (tier === "paid"));
   const checks = await Promise.all(
     named.map(async ({ label, value, paid }) => {
       if (typeof value !== "string" || !value) return null;
@@ -322,58 +323,59 @@ export async function searchWithPool(
   preferred: Provider[] = ["exa", "tavily", "firecrawl"],
 ): Promise<SearchResult> {
   const now = new Date();
-  for (const provider of preferred) {
-    const candidates = await candidatesFor(provider, db, env, now);
-    for (const candidate of candidates) {
-      let reserved = false;
-      if (provider === "exa") {
-        const result = await db
-          .prepare(
-            "UPDATE provider_key_ledger SET estimated_used_usd = estimated_used_usd + ?, updated_at = ? WHERE key_label = ? AND estimated_used_usd + ? <= ?",
-          )
-          .bind(
-            EXA_SEARCH_RESERVE_USD,
-            now.toISOString(),
-            candidate.label,
-            EXA_SEARCH_RESERVE_USD,
-            EXA_MONTHLY_BUDGET_USD,
-          )
-          .run();
-        if (result.meta.changes !== 1) continue;
-        reserved = true;
-      }
-      if (provider === "firecrawl" && candidate.paid) {
-        reserved = await reservePaidFirecrawlCredit(
-          db,
-          candidate.label,
-          candidate.usage,
-          1,
-        );
-        if (!reserved) continue;
-      }
-      try {
-        const hits = await runSearch(candidate, query);
-        return { provider, keyLabel: candidate.label, hits };
-      } catch (error) {
-        if (reserved && provider === "exa")
-          await db
+  for (const tier of ["free", "paid"] as const) {
+    for (const provider of preferred) {
+      const candidates = await candidatesFor(provider, db, env, now, tier);
+      for (const candidate of candidates) {
+        let reserved = false;
+        if (provider === "exa") {
+          const result = await db
             .prepare(
-              "UPDATE provider_key_ledger SET estimated_used_usd = MAX(0, estimated_used_usd - ?), updated_at = ? WHERE key_label = ?",
+              "UPDATE provider_key_ledger SET estimated_used_usd = estimated_used_usd + ?, updated_at = ? WHERE key_label = ? AND estimated_used_usd + ? <= ?",
             )
             .bind(
               EXA_SEARCH_RESERVE_USD,
-              new Date().toISOString(),
+              now.toISOString(),
               candidate.label,
+              EXA_SEARCH_RESERVE_USD,
+              EXA_MONTHLY_BUDGET_USD,
             )
             .run();
-        if (reserved && provider === "firecrawl")
-          await releasePaidFirecrawlCredit(
+          if (result.meta.changes !== 1) continue;
+          reserved = true;
+        }
+        if (provider === "firecrawl" && candidate.paid) {
+          reserved = await reservePaidFirecrawlCredit(
             db,
             candidate.label,
             candidate.usage,
             1,
           );
-        continue;
+          if (!reserved) continue;
+        }
+        try {
+          const hits = await runSearch(candidate, query);
+          if (hits.length) return { provider, keyLabel: candidate.label, hits };
+        } catch {
+          if (reserved && provider === "exa")
+            await db
+              .prepare(
+                "UPDATE provider_key_ledger SET estimated_used_usd = MAX(0, estimated_used_usd - ?), updated_at = ? WHERE key_label = ?",
+              )
+              .bind(
+                EXA_SEARCH_RESERVE_USD,
+                new Date().toISOString(),
+                candidate.label,
+              )
+              .run();
+          if (reserved && provider === "firecrawl")
+            await releasePaidFirecrawlCredit(
+              db,
+              candidate.label,
+              candidate.usage,
+              1,
+            );
+        }
       }
     }
   }

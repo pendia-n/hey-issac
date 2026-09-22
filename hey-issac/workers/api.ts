@@ -2744,9 +2744,8 @@ app.post("/api/runs", async (c) => {
         409,
       );
     const projectId = randomId();
-    const firstCheckAt = new Date(Date.now() + 7 * 86400000).toISOString();
     await c.env.DB.prepare(
-      "INSERT INTO projects (id, workspace_id, site_url, root_url, focus_url, product_category, icp, target_geo, competitors_json, brand_voice_json, watch_enabled, monitor_next_at, monitor_last_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'scheduled', ?)",
+      "INSERT INTO projects (id, workspace_id, site_url, root_url, focus_url, product_category, icp, target_geo, competitors_json, brand_voice_json, watch_enabled, monitor_next_at, monitor_last_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, 'not_enabled', ?)",
     )
       .bind(
         projectId,
@@ -2759,7 +2758,6 @@ app.post("/api/runs", async (c) => {
         targetGeo || null,
         jsonText(competitors),
         "{}",
-        firstCheckAt,
         now,
       )
       .run();

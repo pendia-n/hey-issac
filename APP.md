@@ -28,7 +28,7 @@ Sign-up uses a unique username and a 7-18 character password with at least one l
 - Cloudflare D1 for accounts, workspaces, projects/offices, reports, actions, evidence, usage, billing records, and provider quota ledger.
 - Durable Object alarm for asynchronous report execution.
 - OpenRouter for report synthesis and diagnosis; model requests are recorded per run with request IDs, token counts, and provider cost when returned.
-- Exa, Tavily, and Firecrawl pools: ten free-account slots plus one separate paid-tier slot per provider. Free slots are preferred. Tavily's plan allowance and Firecrawl's remaining credits are checked before use; the Firecrawl paid slot is additionally capped by its monthly plan allocation and current-period usage, excluding purchased credit balance. Exa is budgeted by a local estimate because this implementation cannot query an authoritative live Exa balance. Exa reset dates are configured individually.
+- Exa, Tavily, and Firecrawl pools: ten free-account slots plus one separately named paid-tier slot per provider. Search exhausts available free slots across the selected providers before trying any paid-tier slot. Tavily's plan allowance and Firecrawl's remaining credits are checked before use; the Firecrawl paid slot is additionally capped by its monthly plan allocation and current-period usage, excluding purchased credit balance. Exa is budgeted by a local estimate because this implementation does not read an authoritative live Exa balance. Exa reset dates are configured individually.
 - Stripe Checkout for subscriptions and the one-time brief. Stripe products/prices and webhook setup must exist in the Stripe account before checkout is available.
 
 ## Deployment Checklist
@@ -43,7 +43,7 @@ Sign-up uses a unique username and a 7-18 character password with at least one l
 ## Important Current Boundaries
 
 - The $9 report is queued after a verified paid Stripe webhook; configure D1, the Durable Object, OpenRouter, search credentials, and Stripe before it can complete.
-- Weekly checks are opt-in per office and run through the Worker Cron trigger. The first scheduled check establishes a real baseline; subsequent checks save only actual site changes and returned market sources.
+- Weekly checks are opt-in per office and run through the Worker Cron trigger. Creating an office from a first report does not silently enable monitoring. The first scheduled check establishes a real baseline; subsequent checks save only actual site changes and returned market sources.
 - The office feed and source viewing are implemented. Ask Issac provides a bounded number of evidence-only answers per workspace billing period; it does not launch new web searches for each question.
 - The animated office and per-business character/room variations are deferred to a separate design/engineering pass. The target is a reusable 2D sprite/state system, not a large prebuilt asset library.
 - The on-page plan quota needs reconciliation against actual Stripe billing periods and thorough webhook idempotency review before production launch.
