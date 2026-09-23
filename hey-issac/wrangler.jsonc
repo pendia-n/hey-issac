@@ -13,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "hey-issac-db",
-      "database_id": "REPLACE_AFTER_CREATE",
+      "database_id": "15d61767-7e44-46c5-aef5-48d95723ff65",
       "migrations_dir": "migrations",
     },
   ],
