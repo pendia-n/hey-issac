@@ -1,13 +1,19 @@
+import { env } from "cloudflare:workers";
+
 import type { Route } from "./+types/home";
-import HeyIssac from "../legacy-app";
+import { Welcome } from "../welcome/welcome";
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "heyIssac | A calmer way to grow" },
-    { name: "description", content: "Bring a website and a question. Leave with an evidence-backed next step." },
+    { title: "New React Router App" },
+    { name: "description", content: "Welcome to React Router!" },
   ];
 }
 
-export default function Home(_props: Route.ComponentProps) {
-  return <HeyIssac />;
+export function loader() {
+  return { message: env.VALUE_FROM_CLOUDFLARE };
+}
+
+export default function Home({ loaderData }: Route.ComponentProps) {
+  return <Welcome message={loaderData.message} />;
 }

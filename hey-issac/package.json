@@ -12,16 +12,13 @@
 		"postinstall": "wrangler types"
 	},
 	"dependencies": {
-		"hono": "^4.13.8",
 		"isbot": "^5.1.36",
-		"lucide-react": "^1.47.0",
-		"qrcode.react": "^4.2.0",
 		"react": "^19.2.8",
 		"react-dom": "^19.2.8",
 		"react-router": "^8.4.0"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "^1.57.2",
+		"@cloudflare/vite-plugin": "^1.57.3",
 		"@react-router/dev": "^8.4.0",
 		"@tailwindcss/vite": "^4.2.2",
 		"@types/node": "^22",
@@ -30,6 +27,6 @@
 		"tailwindcss": "^4.2.2",
 		"typescript": "^5.9.3",
 		"vite": "^8.0.3",
-		"wrangler": "^4.136.2"
+		"wrangler": "^4.136.3"
 	}
 }
