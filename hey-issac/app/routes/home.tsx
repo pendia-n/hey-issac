@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { useLocation, useNavigate } from "react-router";
 
 type View = "welcome" | "office" | "updates" | "evidence" | "workshop" | "settings" | "signin" | "signup" | "recovery" | "about" | "pricing" | "announcements";
 type Office = { domain: string; url: string };
@@ -10,6 +11,22 @@ const nav: { id: View; symbol: string; label: string }[] = [
   { id: "evidence", symbol: "▤", label: "Evidence" },
   { id: "workshop", symbol: "✳", label: "Workshop" },
 ];
+
+const viewPaths: Record<View, string> = {
+  welcome: "/",
+  office: "/office",
+  updates: "/updates",
+  evidence: "/evidence",
+  workshop: "/workshop",
+  settings: "/settings",
+  signin: "/signin",
+  signup: "/signup",
+  recovery: "/recovery",
+  about: "/about",
+  pricing: "/pricing",
+  announcements: "/announcements",
+};
+const pathViews = Object.fromEntries(Object.entries(viewPaths).map(([view, path]) => [path, view])) as Record<string, View>;
 
 function getRootWebsite(value: string) {
   const parsed = new URL(value.trim());
@@ -26,7 +43,9 @@ export function meta() {
 }
 
 export default function Home() {
-  const [view, setView] = useState<View>("welcome");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [view, setView] = useState<View>(pathViews[location.pathname] ?? "welcome");
   const [office, setOffice] = useState<Office | null>(null);
   const [url, setUrl] = useState("");
   const [urlError, setUrlError] = useState("");
@@ -36,6 +55,8 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [questionSent, setQuestionSent] = useState(false);
   const mode = time;
+
+  useEffect(() => setView(pathViews[location.pathname] ?? "welcome"), [location.pathname]);
 
   function createOffice(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -52,8 +73,10 @@ export default function Home() {
 
   function selectView(next: View) {
     setView(next);
+    if (location.pathname !== viewPaths[next]) navigate(viewPaths[next]);
     setMobileMenu(false);
     setNotice("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function submitQuestion(event: FormEvent<HTMLFormElement>) {
@@ -166,7 +189,7 @@ function SettingsView({ office, onAdd }: { office: Office | null; onAdd: () => v
 
 function PublicInfo({ view, onBack, onSignup }: { view: View; onBack: () => void; onSignup: () => void }) {
   const content = {
-    about: ["A business deserves more than a dashboard.", "heyIssac gives each website a place to come alive: a room for real discoveries, clear evidence, and the next useful move."],
+    about: ["A small world for your business.", "heyIssac gives each website a place to come alive: a room for real discoveries, clear evidence, and the next useful move."],
     pricing: ["Plans will be clear before you begin.", "Pricing is being shaped around the number of business offices and the research each one needs. No plan or charge is active in this preview."],
     announcements: ["The noticeboard is quiet.", "There are no announcements yet."],
   }[view as "about" | "pricing" | "announcements"];
