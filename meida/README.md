@@ -1,79 +1,50 @@
-# Welcome to React Router!
+# Meida
 
-A modern, production-ready template for building full-stack React applications using React Router.
+Meida is a subscription-based market room for one website per room. It finds public web signals, keeps source links beside the character scene, and offers a basic website-page review. Room creation requires an active Stripe subscription. There is no password recovery: losing the username or password means losing access to that account.
 
-## Features
-
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
-
-## Getting Started
-
-### Installation
-
-Install the dependencies:
-
-```bash
-npm install
-```
-
-### Development
-
-Start the development server with HMR:
-
-```bash
-npm run dev
-```
-
-Your application will be available at `http://localhost:5173`.
-
-## Previewing the Production Build
-
-Preview the production build locally:
-
-```bash
-npm run preview
-```
-
-## Building for Production
-
-Create a production build:
-
-```bash
-npm run build
-```
-
-## Deployment
-
-Deployment is done using the Wrangler CLI.
-
-To build and deploy directly to production:
+## Local setup
 
 ```sh
-npm run deploy
+pnpm install
+pnpm run dev
 ```
 
-To deploy a preview URL:
+The Worker uses the `MEIDA_JWT_SECRET` value from the ignored `.env` file for local development. It must be exactly 32 random bytes encoded as 64 hexadecimal characters. Create it without printing the value to the terminal:
 
 ```sh
-npx wrangler versions upload
+openssl rand -hex 32 | awk '{ print "MEIDA_JWT_SECRET=" $0 }' > .env
+chmod 600 .env
 ```
 
-You can then promote a version to production after verification or roll it out progressively.
+For local Wrangler development, put the same variable in `.dev.vars`. Do not commit either file.
+
+## Stripe setup
+
+Create three recurring monthly Stripe Prices for Solo, Studio, and Partner. Add their IDs to the Worker variables `STRIPE_PRICE_SOLO`, `STRIPE_PRICE_STUDIO`, and `STRIPE_PRICE_PARTNER`. Add `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` as Worker secrets. Checkout remains unavailable until all five values are configured.
+
+To connect Stripe webhooks:
+
+1. Deploy the Worker and copy its public URL.
+2. In Stripe Dashboard, open **Developers → Webhooks** and add an endpoint at `https://<your-worker-host>/api/stripe/webhook`.
+3. Subscribe the endpoint to `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, and `invoice.payment_failed`.
+4. Reveal the endpoint's signing secret once and save it as the Worker secret `STRIPE_WEBHOOK_SECRET`. Save your Stripe API secret as `STRIPE_SECRET_KEY`.
+5. Configure the three Stripe Price IDs as the matching Worker variables, then redeploy. Test checkout and webhook delivery in Stripe test mode before switching to live-mode keys and Prices.
+
+The Worker verifies Stripe's timestamped signature against the raw request body before processing an event. It stores handled event IDs so Stripe retries do not normally repeat the work. The Billing page offers a 50% refund of the first successful payment when requested within 47 hours; submitting that request also cancels the subscription immediately.
+
+## Cloudflare resources
+
+`wrangler.jsonc` binds the `meida-db` D1 database and `meida-assets` R2 bucket. Apply database migrations before the first deployment:
 
 ```sh
-npx wrangler versions deploy
+pnpm exec wrangler d1 migrations apply meida-db --remote
+pnpm run deploy
 ```
 
-## Styling
+The app expects the Worker secret `MEIDA_JWT_SECRET` to contain the same 32-byte hex secret as `.env`. Set it without displaying the value:
 
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
+```sh
+sed -n 's/^MEIDA_JWT_SECRET=//' .env | pnpm exec wrangler secret put MEIDA_JWT_SECRET
+```
 
----
-
-Built with ❤️ using React Router.
+Add the Tavily, Exa, or Firecrawl API keys as Worker secrets named `TAVILY_API_KEY_1` through `_3`, `EXA_API_KEY_1` through `_3`, and `FIRECRAWL_API_KEY_1` through `_3`. Search-provider credentials are independent from Stripe checkout; a paid plan can be purchased before search keys are configured, but room creation waits until at least one search provider is available.

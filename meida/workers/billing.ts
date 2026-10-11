@@ -1,5 +1,4 @@
 import { currentUser } from "./auth";
-import { searchConfigured } from "./search";
 import type { AppEnv, Plan, SubscriptionRow } from "./types";
 import { bodyObject, error, isPlan, json } from "./types";
 
@@ -20,7 +19,7 @@ interface StripeEvent {
 }
 
 function stripeReady(env: AppEnv): boolean {
-  return !!(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET && env.STRIPE_PRICE_SOLO && env.STRIPE_PRICE_STUDIO && env.STRIPE_PRICE_PARTNER && searchConfigured(env));
+  return !!(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET && env.STRIPE_PRICE_SOLO && env.STRIPE_PRICE_STUDIO && env.STRIPE_PRICE_PARTNER);
 }
 
 async function stripe(env: AppEnv, path: string, method = "GET", form?: URLSearchParams, idempotencyKey?: string): Promise<Record<string, unknown>> {

@@ -15,6 +15,10 @@ function hexToBytes(hex: string): Uint8Array {
   return Uint8Array.from(hex.match(/.{2}/g)!, part => parseInt(part, 16));
 }
 
+function validJwtSecret(secret: string | undefined): secret is string {
+  return typeof secret === "string" && /^[0-9a-f]{64}$/i.test(secret);
+}
+
 function ownedBuffer(bytes: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
@@ -38,6 +42,7 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
 }
 
 async function sign(text: string, secret: string): Promise<Uint8Array> {
+  if (!validJwtSecret(secret)) throw new Error("JWT secret must be 32-byte hex");
   const key = await crypto.subtle.importKey("raw", ownedBuffer(hexToBytes(secret)), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   return new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(text)));
 }
@@ -65,7 +70,7 @@ async function issueToken(user: UserRow, secret: string): Promise<string> {
 
 export async function currentUser(request: Request, env: AppEnv): Promise<UserRow | null> {
   const token = request.headers.get("cookie")?.split(";").map(part => part.trim()).find(part => part.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
-  if (!token || !env.MEIDA_JWT_SECRET) return null;
+  if (!token || !validJwtSecret(env.MEIDA_JWT_SECRET)) return null;
   const parts = token.split(".");
   if (parts.length !== 3) return null;
   try {
@@ -101,6 +106,7 @@ export async function handleAuth(request: Request, path: string, env: AppEnv): P
   }
 
   if (path === "/api/auth/signup" && request.method === "POST") {
+    if (!validJwtSecret(env.MEIDA_JWT_SECRET)) return error("Authentication is not configured.", 503);
     const body = await bodyObject(request);
     const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : null;
     const password = body?.password;
@@ -119,6 +125,7 @@ export async function handleAuth(request: Request, path: string, env: AppEnv): P
   }
 
   if (path === "/api/auth/signin" && request.method === "POST") {
+    if (!validJwtSecret(env.MEIDA_JWT_SECRET)) return error("Authentication is not configured.", 503);
     const body = await bodyObject(request);
     const username = typeof body?.username === "string" ? body.username.trim().toLowerCase() : "";
     const key = `signin:${username}:${request.headers.get("cf-connecting-ip") || "unknown"}`;

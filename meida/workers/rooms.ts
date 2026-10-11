@@ -9,11 +9,12 @@ async function details(room: RoomRow, env: AppEnv, owner: boolean): Promise<Reco
   const findings = await env.DB.prepare("SELECT id,kind,title,summary,source_url,published_at,fetched_at,pose FROM findings WHERE room_id=? ORDER BY fetched_at DESC LIMIT 40").bind(room.id).all();
   const base = { id: room.id, rootDomain: room.root_domain, displayName: room.display_name, category: room.category, createdAt: room.created_at, lastCheckedAt: room.last_checked_at, findings: findings.results };
   if (!owner) return base;
-  const subscription = await env.DB.prepare("SELECT plan FROM subscriptions WHERE user_id=?").bind(room.owner_id).first<{ plan: Plan }>();
+  const subscription = await env.DB.prepare("SELECT plan,status,current_period_end FROM subscriptions WHERE user_id=?").bind(room.owner_id).first<SubscriptionRow>();
+  const canHide = subscription?.plan === "partner" && hasPaidAccess(subscription);
   const competitors = await env.DB.prepare("SELECT root_domain,name FROM competitors WHERE room_id=? ORDER BY name").bind(room.id).all();
   const review = await env.DB.prepare("SELECT * FROM reviews WHERE room_id=?").bind(room.id).first();
   const messages = await env.DB.prepare("SELECT role,content,citations_json,created_at FROM conversations WHERE room_id=? AND user_id=? ORDER BY created_at DESC LIMIT 30").bind(room.id, room.owner_id).all();
-  return { ...base, submittedUrl: room.submitted_url, isPrivate: !!room.is_private, canHide: subscription?.plan === "partner", competitors: competitors.results, review, messages: messages.results.reverse() };
+  return { ...base, submittedUrl: room.submitted_url, isPrivate: canHide && !!room.is_private, canHide, competitors: competitors.results, review, messages: messages.results.reverse() };
 }
 
 async function ownerRoom(id: string, userId: string, env: AppEnv): Promise<RoomRow | null> {
@@ -68,12 +69,14 @@ async function chat(room: RoomRow, userId: string, message: string, env: AppEnv)
 
 export async function handleRooms(request: Request, path: string, env: AppEnv): Promise<Response> {
   if (path === "/api/share" && request.method === "GET") {
-    const result = await env.DB.prepare("SELECT r.id,r.root_domain,r.display_name,r.category,r.created_at,r.last_checked_at FROM rooms r LEFT JOIN subscriptions s ON s.user_id=r.owner_id WHERE r.is_private=0 ORDER BY r.created_at DESC LIMIT 60").all();
+    const result = await env.DB.prepare("SELECT r.id,r.root_domain,r.display_name,r.category,r.created_at,r.last_checked_at FROM rooms r WHERE r.is_private=0 OR NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id=r.owner_id AND s.plan='partner' AND s.status IN ('active','trialing') AND s.current_period_end>?) ORDER BY r.created_at DESC LIMIT 60")
+      .bind(Math.floor(Date.now() / 1000)).all();
     return json({ rooms: result.results });
   }
   const publicMatch = path.match(/^\/api\/share\/([a-f0-9-]{36})$/);
   if (publicMatch && request.method === "GET") {
-    const room = await env.DB.prepare("SELECT * FROM rooms WHERE id=? AND is_private=0").bind(publicMatch[1]).first<RoomRow>();
+    const room = await env.DB.prepare("SELECT * FROM rooms r WHERE r.id=? AND (r.is_private=0 OR NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id=r.owner_id AND s.plan='partner' AND s.status IN ('active','trialing') AND s.current_period_end>?))")
+      .bind(publicMatch[1], Math.floor(Date.now() / 1000)).first<RoomRow>();
     return room ? json({ room: await details(room, env, false) }) : error("Room not found.", 404);
   }
 
