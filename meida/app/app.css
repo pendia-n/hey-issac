@@ -63,6 +63,7 @@ h2{font-size:2rem}
 .hinneh-actions{flex-shrink:0}
 @media(max-width:1000px){h1{font-size:3rem}.hero h1{font-size:4rem}}
 @media(max-width:700px){h1{font-size:2.35rem}h2{font-size:1.6rem}.hero:before{background:rgba(9,35,31,.72)}.hero h1{font-size:3.1rem}.model-canvas{height:350px}.room-stage,.room-stage canvas{height:350px;min-height:350px}.theme-toggle{display:grid}.share-grid{grid-template-columns:1fr}.hinneh-intro{padding:22px 17px 15px}.hinneh-intro-inner{align-items:flex-start;flex-direction:column;gap:13px}.hinneh-intro h1{font-size:2.15rem}.hinneh-stage .room-stage,.hinneh-stage .model-canvas,.hinneh-stage .room-stage canvas{height:430px;min-height:430px}.hinneh-details{padding:23px 17px 80px}.hinneh-details-inner{align-items:flex-start;flex-direction:column;gap:20px}}
+@media(max-width:700px){.hinneh-stage .room-stage-info{bottom:63px;left:12px;max-width:calc(100% - 24px)}}
 .hero-stage{position:absolute;z-index:0;right:0;top:0;bottom:0;width:43%;overflow:hidden;background:#44534f}
 .hero-stage .room-stage{height:100%;min-height:0;margin:0;background:transparent}
 .hero-stage .model-canvas{height:100%}

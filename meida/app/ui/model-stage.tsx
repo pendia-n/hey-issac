@@ -11,8 +11,8 @@ export const MODEL_ROLES = [
   { value: "chef", label: "Chef & food", room: "Working restaurant kitchen" },
   { value: "farmer", label: "Farmer & agriculture", room: "Open ranch and working farm" },
   { value: "tailor", label: "Tailor & clothing", room: "Fashion atelier and fitting room" },
-  { value: "gamer", label: "Crypto trader & markets", room: "Digital asset trading floor" },
-  { value: "guide", label: "Guide & travel", room: "Outdoor visitor trailhead" },
+  { value: "gamer", label: "Gamer & esports", room: "Esports arena" },
+  { value: "guide", label: "Guide & travel", room: "Coastal visitor promenade" },
 ] as const;
 const roles = new Set<string>(MODEL_ROLES.map(role => role.value));
 function roleName(value: string): string { return roles.has(value) ? value : "commercial"; }
@@ -67,7 +67,20 @@ function backdrop(scene: THREE.Scene, role: string, dark: boolean) {
       leaf.rotation.z = (i - 2) * 0.27;
     }
   };
-  if (role !== "farmer" && role !== "guide") addRoomTrim(role === "commercial" ? 0x8a795f : 0x273f39, role === "commercial" ? 0x4a514d : 0x304b43);
+  const addSign = (label: string, x: number, y: number, z: number, w: number, h: number, background: string, foreground: string) => {
+    const canvas = document.createElement("canvas"); canvas.width = 1024; canvas.height = 256;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.fillStyle = background; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = foreground; context.textAlign = "center"; context.textBaseline = "middle";
+    let fontSize = 142;
+    do { context.font = `800 ${fontSize}px system-ui, sans-serif`; fontSize -= 4; } while (context.measureText(label).width > 900 && fontSize > 32);
+    context.fillText(label, 512, 133);
+    const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide }));
+    mesh.position.set(x, y, z); scene.add(mesh);
+  };
+  if (role !== "farmer" && role !== "guide") addRoomTrim(role === "commercial" ? 0x8a795f : role === "gamer" ? 0x55c9c4 : 0x273f39, role === "commercial" ? 0x4a514d : role === "gamer" ? 0x34445b : 0x304b43);
   if (role === "commercial") {
     // Executive strategy room: presentation wall, conference furniture, shelving and task lighting.
     addBox(0, 3.05, -3.0, 3.05, 2.0, 0.12, 0x374440); addBox(0, 3.05, -2.9, 2.78, 1.73, 0.045, 0x263c39);
@@ -187,34 +200,81 @@ function backdrop(scene: THREE.Scene, role: string, dark: boolean) {
     addBox(2.7, 0.88, -1.78, 1.4, 0.16, 0.62, 0x423846); addBox(2.7, 1.16, -1.78, 0.95, 0.12, 0.42, 0x282d38); for (let i = 0; i < 4; i++) addCylinder(2.38 + i * 0.2, 1.25, -1.55, 0.035, 0.035, 0.04, 0xd1b76e);
     addCylinder(4.25, 1.45, -1.9, 0.025, 0.025, 1.3, 0x353440); addSphere(4.25, 2.12, -1.9, 0.09, 0.16, 0.09, 0x252a32); addCylinder(4.25, 0.76, -1.9, 0.2, 0.2, 0.08, 0x353440);
   } else if (role === "gamer") {
-    // Finance/trading floor instead of esports: market displays use illustrative lines only, no live-looking numbers.
-    addBox(0, 2.52, -3.1, 9.5, 2.3, 0.12, 0x1d2c31);
-    const panel = (x: number, y: number, w: number, h: number, bezel: number, screen: number) => { addBox(x, y, -2.82, w + 0.14, h + 0.14, 0.13, bezel); addBox(x, y, -2.72, w, h, 0.04, screen); };
-    panel(-3.28, 2.82, 2.2, 1.4, 0x131e21, 0x213d3a); panel(0, 2.82, 2.2, 1.4, 0x131e21, 0x233c4b); panel(3.28, 2.82, 2.2, 1.4, 0x131e21, 0x293c36);
-    // Repeated bar-and-line marks suggest candlesticks without inventing values or labels.
-    for (let i = 0; i < 7; i++) { const x = -4.0 + i * 0.23; const height = 0.25 + (i % 3) * 0.17; addBox(x, 2.42 + height / 2, -2.67, 0.09, height, 0.025, i % 2 ? 0x55b99a : 0xd36e67); addBox(x, 2.36 + (i % 4) * 0.12, -2.64, 0.16, 0.025, 0.02, 0x83bba9); }
-    for (let i = 0; i < 7; i++) { const x = -0.78 + i * 0.23; addBox(x, 2.4 + (i % 4) * 0.13, -2.66, 0.08, 0.32 + (i % 3) * 0.14, 0.025, i % 2 ? 0x55b99a : 0xd36e67); }
-    for (let i = 0; i < 7; i++) { const x = 2.5 + i * 0.23; addBox(x, 2.41 + (i % 3) * 0.15, -2.66, 0.08, 0.28 + (i % 4) * 0.1, 0.025, i % 2 ? 0x55b99a : 0xd36e67); }
-    addBox(0, 0.91, -1.82, 5.8, 0.18, 1.08, 0x4b4944); addBox(-1.95, 0.48, -1.84, 0.16, 0.84, 0.84, 0x353a38); addBox(1.95, 0.48, -1.84, 0.16, 0.84, 0.84, 0x353a38);
-    for (let i = 0; i < 3; i++) { const x = -2.65 + i * 2.65; addBox(x, 1.72, -2.42, 1.12, 0.72, 0.12, 0x172226); addBox(x, 1.72, -2.32, 0.96, 0.55, 0.04, [0x31594e, 0x34546a, 0x3e5b4c][i]); addBox(x, 1.28, -2.42, 0.12, 0.14, 0.3, 0x172226); }
-    addBox(0, 1.03, -1.35, 0.58, 0.04, 0.26, 0x879a8d); addBox(0, 1.1, -1.33, 0.43, 0.08, 0.2, 0xc5c4ae);
-    for (const x of [-4.15, 4.15]) { addBox(x, 3.85, -2.75, 0.32, 0.12, 0.05, 0xd1ad56); addBox(x, 1.18, -1.8, 0.42, 0.12, 0.26, 0x283936); }
+    // A tournament stage surrounds an open lane for each of the character poses.
+    addBox(0, 2.45, -3.09, 9.4, 3.0, 0.14, 0x1b2635);
+    addBox(0, 3.92, -2.95, 8.7, 0.72, 0.14, 0x101b28);
+    addSign("ESPORTS ARENA", 0, 3.92, -2.84, 5.4, 0.62, "#101b28", "#ecf9f5");
+    for (const x of [-4.42, 4.42]) {
+      addBox(x, 2.25, -2.84, 0.13, 3.35, 0.1, 0x4ec8c3);
+      addBox(x, 3.55, -2.68, 0.46, 0.15, 0.18, 0xf08068);
+    }
+    addBox(0, 0.12, -1.5, 8.7, 0.08, 2.4, 0x283446);
+    for (const x of [-4.1, 4.1]) addBox(x, 0.17, -1.2, 0.09, 0.04, 2.55, 0x59d2ca);
+    // The side screens show a controller and a racing course, never financial charts.
+    addBox(-3.0, 2.65, -2.78, 2.55, 1.55, 0.15, 0x0b141e);
+    addBox(-3.0, 2.65, -2.66, 2.38, 1.37, 0.04, 0x365b71);
+    addBox(-3.0, 2.61, -2.59, 1.24, 0.58, 0.06, 0xeff0dc);
+    addBox(-3.39, 2.63, -2.53, 0.32, 0.06, 0.04, 0x1a3441);
+    addBox(-3.39, 2.63, -2.52, 0.06, 0.32, 0.04, 0x1a3441);
+    for (const [x, y, color] of [[-2.68, 2.77, 0xf08068], [-2.49, 2.57, 0xe4bb62], [-2.8, 2.47, 0x54c9c1]] as const) addSphere(x, y, -2.52, 0.07, 0.07, 0.03, color);
+    addBox(3.0, 2.65, -2.78, 2.55, 1.55, 0.15, 0x0b141e);
+    addBox(3.0, 2.65, -2.66, 2.38, 1.37, 0.04, 0x36415e);
+    const track = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.065, 8, 48), new THREE.MeshBasicMaterial({ color: 0xe8e7d6 }));
+    track.position.set(3.0, 2.7, -2.59); track.scale.y = 0.65; scene.add(track);
+    addBox(3.0, 2.44, -2.52, 0.44, 0.13, 0.07, 0xf08068);
+    for (const x of [2.83, 3.17]) addCylinder(x, 2.34, -2.5, 0.08, 0.08, 0.07, 0x14202a);
+    // Two gaming stations and a racing wheel sit well to either side of the model.
+    for (const x of [-3.3, 3.3]) {
+      addBox(x, 0.88, -1.52, 2.15, 0.14, 0.8, 0x394252);
+      for (const legX of [x - 0.83, x + 0.83]) addBox(legX, 0.43, -1.5, 0.12, 0.85, 0.64, 0x222a39);
+      addBox(x, 1.34, -2.08, 1.18, 0.8, 0.1, 0x101a24);
+      addBox(x, 1.35, -1.99, 1.04, 0.65, 0.035, x < 0 ? 0x3d83a8 : 0x804e9c);
+      addBox(x, 0.99, -1.22, 0.75, 0.035, 0.25, 0xd2dbe0);
+    }
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.055, 8, 28), new THREE.MeshStandardMaterial({ color: 0x151d27, roughness: 0.55 }));
+    wheel.position.set(3.3, 1.13, -1.07); scene.add(wheel);
+    addBox(3.3, 1.13, -1.01, 0.45, 0.055, 0.07, 0x161f2b);
+    addBox(3.3, 1.13, -1.0, 0.055, 0.42, 0.07, 0x161f2b);
+    addBox(3.3, 0.8, -2.35, 0.78, 1.35, 0.2, 0x1c2430);
+    addBox(3.3, 0.82, -2.22, 0.67, 0.1, 0.1, 0xf08068);
+    addSign("PLAY", -3.0, 3.58, -2.81, 1.55, 0.34, "#1b2635", "#7ce4d7");
+    addSign("RACE", 3.0, 3.58, -2.81, 1.55, 0.34, "#1b2635", "#f6ae88");
   } else if (role === "guide") {
-    // Open-air trailhead with distant landscape, route sign and pack; no interior walls or office furniture.
-    scene.background = new THREE.Color(dark ? 0x344a58 : 0x9fc6d2);
-    addSphere(-2.8, 1.15, -3.05, 3.2, 1.08, 0.18, dark ? 0x4e675c : 0x779984); addSphere(2.7, 1.28, -3.18, 3.6, 1.3, 0.18, dark ? 0x465f59 : 0x698b78);
-    addSphere(-3.8, 3.85, -3.0, 0.52, 0.52, 0.08, dark ? 0xd4b776 : 0xf0d27d);
-    addBox(0, 0.03, -1.5, 13.5, 0.12, 8.5, dark ? 0x657c5e : 0x9a9a70);
-    // Trail signpost and two arrow boards, offset from the character.
-    addCylinder(-3.75, 1.55, -2.05, 0.065, 0.065, 3.0, 0x70553a);
-    addBox(-3.28, 2.35, -2.03, 1.25, 0.38, 0.14, 0xd2a65e); addBox(-3.28, 1.88, -2.03, 1.25, 0.38, 0.14, 0x547d73);
-    addBox(-3.28, 2.35, -1.94, 0.8, 0.045, 0.035, 0xf3e7ca); addBox(-3.28, 1.88, -1.94, 0.78, 0.045, 0.035, 0xe1e7cf);
-    // Trail bollards and a large wayfinding map panel.
-    for (let i = 0; i < 5; i++) { const x = 1.9 + i * 0.62; addCylinder(x, 0.36, -1.9, 0.09, 0.1, 0.72, 0x72563e); addSphere(x, 0.76, -1.9, 0.14, 0.12, 0.13, 0xe0b961); }
-    addBox(3.8, 2.2, -2.88, 1.35, 2.2, 0.14, 0x584c3c); addBox(3.8, 2.2, -2.76, 1.12, 1.96, 0.04, 0xe5ddc5);
-    addBox(3.62, 2.37, -2.72, 0.48, 0.09, 0.03, 0x4d8873); addBox(3.87, 2.06, -2.72, 0.62, 0.08, 0.03, 0xd2a65e); addBox(3.75, 1.76, -2.72, 0.4, 0.08, 0.03, 0x67889a);
-    addBox(-4.18, 0.72, -1.38, 0.72, 1.3, 0.45, 0x6c513c); addBox(-4.18, 1.41, -1.38, 0.72, 0.08, 0.45, 0x9a7850);
-    addBox(4.4, 0.5, -1.25, 0.76, 0.8, 0.54, 0x586c6b); addBox(4.4, 0.91, -1.25, 0.78, 0.08, 0.56, 0xa9b6a6);
+    // A coastal visitor destination: lighthouse, harbor, guided-tour kiosk and promenade.
+    scene.background = new THREE.Color(dark ? 0x4b6c78 : 0x95c5d5);
+    addBox(0, 1.52, -3.18, 13.6, 1.58, 0.06, dark ? 0x3c7182 : 0x5bafbe);
+    for (let i = 0; i < 9; i++) addBox(-4.6 + i * 1.16, 1.25 + (i % 2) * 0.12, -3.11, 0.58, 0.025, 0.035, 0xb9dde0);
+    addSphere(-4.45, 1.86, -3.24, 1.7, 0.5, 0.18, 0x668473);
+    addSphere(4.65, 1.91, -3.24, 1.7, 0.47, 0.18, 0x6a8979);
+    addSphere(-2.2, 4.1, -3.2, 0.46, 0.46, 0.08, 0xffdfa0);
+    addBox(0, 0.04, -1.4, 13.5, 0.14, 8.4, dark ? 0x6e7775 : 0xc9bea5);
+    for (const x of [-4.2, -2.45, 2.35, 4.15]) addBox(x, 0.07, -0.85, 0.09, 0.025, 3.4, 0xe9d9b7);
+    // Tall striped lighthouse and beacon occupy the left edge of the view.
+    addCylinder(-3.57, 1.85, -2.61, 0.36, 0.54, 3.35, 0xf4ebd2);
+    for (const y of [1.35, 2.2]) addCylinder(-3.57, y, -2.61, 0.43, 0.47, 0.19, 0xc66454);
+    addCylinder(-3.57, 3.57, -2.61, 0.54, 0.44, 0.34, 0x3b6269);
+    const lighthouseRoof = new THREE.Mesh(new THREE.ConeGeometry(0.63, 0.55, 12), new THREE.MeshStandardMaterial({ color: 0xc66454, roughness: 0.84 }));
+    lighthouseRoof.position.set(-3.57, 4.02, -2.61); scene.add(lighthouseRoof);
+    addBox(-3.57, 2.95, -2.13, 0.22, 0.42, 0.05, 0x345462);
+    addBox(-3.57, 0.55, -2.04, 0.5, 0.88, 0.08, 0x597275);
+    // Tour information kiosk stays to the right of the guide and away from the pose silhouettes.
+    addBox(3.18, 1.46, -2.61, 2.37, 2.5, 0.58, 0xe7d9b7);
+    addBox(3.18, 2.8, -2.54, 2.65, 0.26, 0.79, 0xc46d55);
+    addBox(3.18, 1.66, -2.25, 1.72, 1.2, 0.09, 0x375968);
+    addBox(3.18, 0.91, -2.12, 2.0, 0.14, 0.49, 0xb28760);
+    addSign("VISITOR CENTRE", 3.18, 2.48, -2.11, 2.15, 0.42, "#f6e8c8", "#304c55");
+    addSign("GUIDED TOURS", 3.18, 1.78, -2.18, 1.58, 0.35, "#375968", "#f9e7be");
+    // A route board and viewing telescope make the open space feel used by visitors.
+    addBox(-1.94, 2.22, -2.91, 1.13, 1.33, 0.13, 0x675b49);
+    addBox(-1.94, 2.22, -2.79, 0.95, 1.14, 0.035, 0xe9dfc3);
+    addSign("HARBOR WALK", -1.94, 2.64, -2.73, 0.85, 0.18, "#e9dfc3", "#315969");
+    addBox(-2.1, 2.04, -2.71, 0.5, 0.07, 0.02, 0x5da8ad);
+    addBox(-1.75, 1.83, -2.71, 0.3, 0.07, 0.02, 0xc7795a);
+    addCylinder(-2.75, 0.76, -1.27, 0.05, 0.05, 1.37, 0x5c6c66);
+    addBox(-2.75, 1.46, -1.27, 0.5, 0.19, 0.23, 0x486576);
+    for (const x of [-4.3, -2.85, 2.5, 4.3]) addCylinder(x, 0.5, -1.82, 0.065, 0.075, 1.0, 0x557176);
+    addBox(-3.58, 0.73, -1.82, 1.45, 0.065, 0.07, 0x557176);
+    addBox(3.4, 0.73, -1.82, 1.8, 0.065, 0.07, 0x557176);
   }
 }
 
@@ -243,8 +303,10 @@ export function ModelStage({ category, activity, preview = false }: { category: 
     const mount = host.current;
     const scene = new THREE.Scene();
     const targetY = preview ? 1.4 : 1.15;
-    const camera = new THREE.PerspectiveCamera(37, 1, 0.1, 80);
-    camera.position.set(0, preview ? 1.8 : 1.65, preview ? 6.7 : 7.8); camera.lookAt(0, targetY, 0);
+    let compact = mount.clientWidth < 600;
+    const cameraDistance = (small: boolean) => small ? (preview ? 9 : 9.6) : (preview ? 6.7 : 7.8);
+    const camera = new THREE.PerspectiveCamera(compact ? 50 : 37, 1, 0.1, 80);
+    camera.position.set(0, preview ? 1.8 : 1.65, cameraDistance(compact)); camera.lookAt(0, targetY, 0);
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap; renderer.outputColorSpace = THREE.SRGBColorSpace;
     mount.replaceChildren(renderer.domElement);
@@ -262,7 +324,7 @@ export function ModelStage({ category, activity, preview = false }: { category: 
       model.traverse(object => { if (object instanceof THREE.Mesh) { object.geometry.dispose(); (Array.isArray(object.material) ? object.material : [object.material]).forEach(material => { for (const value of Object.values(material)) if (value instanceof THREE.Texture) value.dispose(); material.dispose(); }); } });
       scene.remove(model);
     };
-    const resize = () => { const { width, height } = mount.getBoundingClientRect(); if (!width || !height) return; camera.aspect = width / height; camera.updateProjectionMatrix(); renderer.setSize(width, height, false); };
+    const resize = () => { const { width, height } = mount.getBoundingClientRect(); if (!width || !height) return; const nextCompact = width < 600; if (nextCompact !== compact) { compact = nextCompact; camera.fov = compact ? 50 : 37; camera.position.z = cameraDistance(compact); } camera.aspect = width / height; camera.updateProjectionMatrix(); renderer.setSize(width, height, false); };
     const observer = new ResizeObserver(resize); observer.observe(mount); resize();
     let loadedPose = "";
     let loadingPose = "";
@@ -279,7 +341,7 @@ export function ModelStage({ category, activity, preview = false }: { category: 
       const model = gltf.scene;
       const bounds = new THREE.Box3().setFromObject(model);
       const size = bounds.getSize(new THREE.Vector3());
-      const viewportScale = mount.clientWidth < 600 ? 0.82 : 1;
+      const viewportScale = mount.clientWidth < 600 ? 1.35 : 1;
       const scale = (preview ? 3.15 : 2.7) * viewportScale / Math.max(size.y, 0.01);
       model.scale.setScalar(scale);
       model.position.set(-(bounds.min.x + bounds.max.x) * scale / 2, -bounds.min.y * scale, 0.12);
