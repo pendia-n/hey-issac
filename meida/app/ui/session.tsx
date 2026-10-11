@@ -8,7 +8,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   async function refresh() {
-    try { const response = await api<{ user: SessionUser }>("/api/auth/me"); setUser(response.user); }
+    try { const response = await api<{ user: SessionUser | null }>("/api/auth/me"); setUser(response.user); }
     catch { setUser(null); }
     finally { setLoading(false); }
   }

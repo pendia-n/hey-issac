@@ -102,7 +102,7 @@ export async function handleAuth(request: Request, path: string, env: AppEnv): P
 
   if (path === "/api/auth/me" && request.method === "GET") {
     const user = await currentUser(request, env);
-    return user ? json({ user: { id: user.id, username: user.username } }) : error("Sign in required.", 401);
+    return json({ user: user ? { id: user.id, username: user.username } : null });
   }
 
   if (path === "/api/auth/signup" && request.method === "POST") {
