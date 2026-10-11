@@ -7,9 +7,20 @@
 	"name": "meida",
 	"compatibility_date": "2026-10-06",
 	"main": "./workers/app.ts",
-	"vars": {
-		"VALUE_FROM_CLOUDFLARE": "Hello from Cloudflare"
-	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "meida-db",
+			"database_id": "468df978-d9f3-451a-9a48-f891c599bec3"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "ASSETS",
+			"bucket_name": "meida-assets"
+		}
+	],
+	"triggers": { "crons": ["0 * * * *"] },
 	"observability": {
 		"enabled": true
 	},

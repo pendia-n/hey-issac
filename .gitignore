@@ -1,3 +1,4 @@
 .DS_Store
 .keys
+.pnpm-store/
 hia-app/.playwright-cli/
