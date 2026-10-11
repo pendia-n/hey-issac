@@ -53,6 +53,10 @@ export function hasPaidAccess(subscription: SubscriptionRow | null): boolean {
   return !!subscription && (subscription.status === "active" || subscription.status === "trialing") && subscription.current_period_end > Math.floor(Date.now() / 1000);
 }
 
+export function hasUnendedSubscription(subscription: SubscriptionRow | null): boolean {
+  return !!subscription?.stripe_subscription_id && !["canceled", "incomplete_expired"].includes(subscription.status);
+}
+
 async function syncSubscription(env: AppEnv, record: StripeSubscription, hintedUserId?: string): Promise<void> {
   const existing = await env.DB.prepare("SELECT user_id,plan FROM subscriptions WHERE stripe_subscription_id=? OR stripe_customer_id=? LIMIT 1")
     .bind(record.id, customerId(record.customer)).first<{ user_id: string; plan: Plan }>();
@@ -87,7 +91,7 @@ export async function handleBilling(request: Request, path: string, env: AppEnv)
 
   if (path === "/api/billing/checkout" && request.method === "POST") {
     if (!stripeReady(env)) return error("Subscriptions are not available yet. Please return when setup is complete.", 503);
-    if (hasPaidAccess(current)) return error("Your current plan must end before you can choose another.", 409);
+    if (hasUnendedSubscription(current)) return error("Cancel your current subscription before you choose another plan.", 409);
     const body = await bodyObject(request);
     if (!isPlan(body?.plan)) return error("Choose a valid plan.");
     const price = body.plan === "solo" ? env.STRIPE_PRICE_SOLO : body.plan === "studio" ? env.STRIPE_PRICE_STUDIO : env.STRIPE_PRICE_PARTNER;
@@ -102,7 +106,7 @@ export async function handleBilling(request: Request, path: string, env: AppEnv)
   }
 
   if (path === "/api/billing/cancel" && request.method === "POST") {
-    if (!current?.stripe_subscription_id || !hasPaidAccess(current)) return error("No active plan to cancel.", 409);
+    if (!current?.stripe_subscription_id || !hasUnendedSubscription(current)) return error("No subscription to cancel.", 409);
     const body = await bodyObject(request);
     const immediately = body?.immediately === true;
     try {
