@@ -1,5 +1,5 @@
 import { getDomain } from "tldts";
-import type { AppEnv, RoomRow } from "./types";
+import type { AppEnv, Plan, RoomRow } from "./types";
 import { hasProvider, providerPost, withProviderKey } from "./provider-pool";
 
 export interface SearchHit {
@@ -26,6 +26,13 @@ function clean(value: unknown, limit = 500): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, limit) : "";
 }
 
+function concise(value: unknown, limit = 210): string {
+  const text = clean(value, 1200);
+  if (text.length <= limit) return text;
+  const boundary = text.lastIndexOf(" ", limit - 1);
+  return text.slice(0, boundary > limit * 0.65 ? boundary : limit).replace(/[,:;\s]+$/, "") + "…";
+}
+
 function published(value: unknown): number | null {
   if (typeof value !== "string") return null;
   const time = Date.parse(value);
@@ -48,9 +55,9 @@ export function canonicalSite(input: unknown): { domain: string; url: string } |
 
 function validHit(title: unknown, url: unknown, excerpt: unknown, date: unknown, provider: SearchHit["provider"]): SearchHit | null {
   if (typeof url !== "string" || !canonicalSite(url)) return null;
-  const name = clean(title, 180);
+  const name = clean(title, 120);
   if (!name) return null;
-  return { title: name, url, excerpt: clean(excerpt, 700), publishedAt: published(date), provider };
+  return { title: name, url, excerpt: concise(excerpt), publishedAt: published(date), provider };
 }
 
 async function pooledSearch(query: string, env: AppEnv, provider: SearchHit["provider"]): Promise<SearchHit[]> {
@@ -63,26 +70,25 @@ async function pooledSearch(query: string, env: AppEnv, provider: SearchHit["pro
       const result = await providerPost("https://api.exa.ai/search", { "x-api-key": key }, { query, type: "auto", numResults: 8, contents: { text: { maxCharacters: 600 } } }) as { results?: Array<Record<string, unknown>>; costDollars?: { total?: number } };
       return { value: (result.results || []).map(item => validHit(item.title, item.url, item.text || item.summary, item.publishedDate, provider)).filter((item): item is SearchHit => !!item), cost: result.costDollars?.total ?? 0.007 };
     }
-    const result = await providerPost("https://api.firecrawl.dev/v2/search", { authorization: "Bearer " + key }, { query, limit: 8, sources: [{ type: "web" }] }) as { data?: { web?: Array<Record<string, unknown>> } | Array<Record<string, unknown>> };
+    const result = await providerPost("https://api.firecrawl.dev/v2/search", { authorization: "Bearer " + key }, { query, limit: 22, sources: [{ type: "web" }] }) as { data?: { web?: Array<Record<string, unknown>> } | Array<Record<string, unknown>> };
     const items = Array.isArray(result.data) ? result.data : result.data?.web || [];
-    return { value: items.map(item => validHit(item.title, item.url, item.description || item.markdown, item.publishedDate, provider)).filter((item): item is SearchHit => !!item), cost: 2 };
+    return { value: items.map(item => validHit(item.title, item.url, item.description || item.markdown, item.publishedDate, provider)).filter((item): item is SearchHit => !!item), cost: Math.ceil(items.length / 10) * 2 };
   });
 }
 
-export function searchConfigured(env: AppEnv): boolean {
-  return hasProvider(env, "tavily") || hasProvider(env, "exa") || hasProvider(env, "firecrawl");
+export function searchConfigured(env: AppEnv, plan: Plan): boolean {
+  return hasProvider(env, "tavily") || hasProvider(env, "firecrawl") || (plan !== "solo" && hasProvider(env, "exa"));
 }
 
-export async function searchWeb(query: string, env: AppEnv): Promise<SearchHit[]> {
+export async function searchWeb(query: string, env: AppEnv, plan: Plan): Promise<SearchHit[]> {
   const providers: Array<() => Promise<SearchHit[]>> = [];
   if (hasProvider(env, "tavily")) providers.push(() => pooledSearch(query, env, "tavily"));
-  if (hasProvider(env, "exa")) providers.push(() => pooledSearch(query, env, "exa"));
   if (hasProvider(env, "firecrawl")) providers.push(() => pooledSearch(query, env, "firecrawl"));
+  if (plan !== "solo" && hasProvider(env, "exa")) providers.push(() => pooledSearch(query, env, "exa"));
   if (!providers.length) throw new Error("Web search is not configured.");
   for (const run of providers) {
     try {
-      const hits = await run();
-      if (hits.length) return hits;
+      return await run();
     } catch {
       // Try the next configured provider without leaking response bodies or keys.
     }
@@ -171,18 +177,25 @@ export async function fingerprint(hit: SearchHit): Promise<string> {
   return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function refreshRoom(room: RoomRow, env: AppEnv): Promise<{ added: number; checkedAt: number }> {
-  const hits = await searchWeb(`"${room.display_name}" ${room.root_domain} news updates`, env);
-  const now = Date.now();
-  let added = 0;
-  for (const hit of hits) {
-    const site = canonicalSite(hit.url);
-    if (!site || site.domain === room.root_domain) continue;
-    const hash = await fingerprint(hit);
-    const result = await env.DB.prepare("INSERT OR IGNORE INTO findings (id,room_id,fingerprint,kind,title,summary,source_url,published_at,fetched_at,pose) VALUES (?,?,?,?,?,?,?,?,?,?)")
-      .bind(crypto.randomUUID(), room.id, hash, "mention", hit.title, hit.excerpt || "The source mentions this site. Open it to read more.", hit.url, hit.publishedAt, now, 0).run();
-    if (result.meta.changes) added++;
+export async function refreshRoom(room: RoomRow, env: AppEnv, plan: Plan): Promise<{ added: number; checkedAt: number }> {
+  const started = Date.now();
+  await env.DB.prepare("UPDATE rooms SET search_started_at=? WHERE id=?").bind(started, room.id).run();
+  try {
+    const hits = await searchWeb(`"${room.display_name}" ${room.root_domain} news updates`, env, plan);
+    let added = 0;
+    for (const hit of hits) {
+      const site = canonicalSite(hit.url);
+      if (!site || site.domain === room.root_domain) continue;
+      const hash = await fingerprint(hit);
+      const result = await env.DB.prepare("INSERT OR IGNORE INTO findings (id,room_id,fingerprint,kind,title,summary,source_url,published_at,fetched_at,pose) VALUES (?,?,?,?,?,?,?,?,?,?)")
+        .bind(crypto.randomUUID(), room.id, hash, "mention", hit.title, hit.excerpt || "Open the source to read the original.", hit.url, hit.publishedAt, Date.now(), 0).run();
+      if (result.meta.changes) added++;
+    }
+    const checkedAt = Date.now();
+    await env.DB.prepare("UPDATE rooms SET last_checked_at=?,search_finished_at=? WHERE id=?").bind(checkedAt, checkedAt, room.id).run();
+    return { added, checkedAt };
+  } catch (cause) {
+    await env.DB.prepare("UPDATE rooms SET search_finished_at=? WHERE id=?").bind(Date.now(), room.id).run();
+    throw cause;
   }
-  await env.DB.prepare("UPDATE rooms SET last_checked_at=? WHERE id=?").bind(now, room.id).run();
-  return { added, checkedAt: now };
 }

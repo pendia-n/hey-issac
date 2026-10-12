@@ -34,7 +34,7 @@ export default {
     }
     return requestHandler(request);
   },
-  async scheduled(_event, env) {
-    await scheduledChecks(env);
+  async scheduled(event, env) {
+    await scheduledChecks(env, event.scheduledTime);
   },
 } satisfies ExportedHandler<AppEnv>;

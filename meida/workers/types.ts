@@ -55,6 +55,8 @@ export interface RoomRow {
   last_checked_at: number | null;
   last_review_at: number | null;
   last_competitor_checked_at: number | null;
+  search_started_at: number | null;
+  search_finished_at: number | null;
 }
 
 export const PLANS = {

@@ -12,7 +12,7 @@ interface Review { status: string; checked_at: number; source_url: string; title
 interface Message { role: string; content: string; citations_json?: string | null; created_at: number }
 interface Room {
   id: string; rootDomain: string; displayName: string; category: string; submittedUrl: string;
-  isPrivate: boolean; canHide: boolean; lastCheckedAt: number | null; findings: Finding[];
+  isPrivate: boolean; canHide: boolean; lastCheckedAt: number | null; searchStartedAt: number | null; searchFinishedAt: number | null; findings: Finding[];
   competitors: Competitor[]; review: Review | null; messages: Message[];
 }
 interface Candidate { domain: string; name: string; sourceUrl: string }
@@ -31,6 +31,7 @@ export default function RoomPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [activity, setActivity] = useState<Activity>("idle");
+  const [clientNow, setClientNow] = useState(Date.now());
   const [tab, setTab] = useState<"updates" | "website" | "chat">("updates");
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -60,7 +61,8 @@ export default function RoomPage() {
           return result.room;
         });
       }).catch(() => {});
-    }, 60_000);
+      setClientNow(Date.now());
+    }, 15_000);
     return () => clearInterval(timer);
   }, [id, user?.id, reload]);
   useEffect(() => {
@@ -69,6 +71,12 @@ export default function RoomPage() {
     return () => clearTimeout(timer);
   }, [activity]);
   const sortedFindings = useMemo(() => [...(room?.findings || [])].sort((a, b) => b.fetched_at - a.fetched_at), [room?.findings]);
+  const latestMarketUpdate = sortedFindings.find(item => item.kind !== "competitor");
+  const marketUpdate = latestMarketUpdate && clientNow - latestMarketUpdate.fetched_at < 45 * 60_000
+    ? { title: latestMarketUpdate.title, summary: latestMarketUpdate.summary, sourceUrl: latestMarketUpdate.source_url }
+    : null;
+  const searchInProgress = !!room?.searchStartedAt && room.searchStartedAt > (room.searchFinishedAt || 0) && clientNow - room.searchStartedAt < 20 * 60_000;
+  const stageActivity: Activity = activity === "working" || searchInProgress ? "working" : marketUpdate ? "responding" : activity;
 
   async function run(action: "check" | "review") {
     if (!id) return;
@@ -127,7 +135,7 @@ export default function RoomPage() {
     </div>
     {message && <p className="message room-alert" role="status">{message}</p>}
     <div className="room-workspace">
-      <div className="room-viewer-wrap"><ModelStage category={room.category} activity={activity} /></div>
+      <div className="room-viewer-wrap"><ModelStage category={room.category} activity={stageActivity} update={marketUpdate} /></div>
       <aside className="panel competitor-panel">
         <div className="room-panel-heading"><h2>Competitors</h2><span className="tag">{room.competitors.length} added</span></div>
         <p className="small-note">These websites sit beside your market room. They do not appear in the 3D scene.</p>

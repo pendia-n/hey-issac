@@ -4,10 +4,11 @@ import { canonicalSite, categoryFor, competitorCandidates, fingerprint, refreshR
 import { hasProvider, providerPost, withProviderKey } from "./provider-pool";
 import type { AppEnv, Plan, RoomRow, SubscriptionRow } from "./types";
 import { bodyObject, error, json, monthKey, PLANS } from "./types";
+import { newYorkClock, sameNewYorkHour } from "./new-york";
 
 async function details(room: RoomRow, env: AppEnv, owner: boolean): Promise<Record<string, unknown>> {
   const findings = await env.DB.prepare("SELECT id,kind,title,summary,source_url,published_at,fetched_at,pose FROM findings WHERE room_id=? ORDER BY fetched_at DESC LIMIT 40").bind(room.id).all();
-  const base = { id: room.id, rootDomain: room.root_domain, displayName: room.display_name, category: room.category, createdAt: room.created_at, lastCheckedAt: room.last_checked_at, findings: findings.results };
+  const base = { id: room.id, rootDomain: room.root_domain, displayName: room.display_name, category: room.category, createdAt: room.created_at, lastCheckedAt: room.last_checked_at, searchStartedAt: room.search_started_at, searchFinishedAt: room.search_finished_at, findings: findings.results };
   if (!owner) return base;
   const subscription = await env.DB.prepare("SELECT plan,status,current_period_end FROM subscriptions WHERE user_id=?").bind(room.owner_id).first<SubscriptionRow>();
   const canHide = subscription?.plan === "partner" && hasPaidAccess(subscription);
@@ -32,39 +33,72 @@ async function undoUsage(userId: string, kind: string, env: AppEnv): Promise<voi
 }
 
 async function saveReview(room: RoomRow, env: AppEnv): Promise<void> {
-  const review = await reviewSite(room.submitted_url, env);
-  await env.DB.prepare("INSERT INTO reviews(room_id,checked_at,source_url,status,title,description,canonical,h1,robots,issues_json) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(room_id) DO UPDATE SET checked_at=excluded.checked_at,source_url=excluded.source_url,status=excluded.status,title=excluded.title,description=excluded.description,canonical=excluded.canonical,h1=excluded.h1,robots=excluded.robots,issues_json=excluded.issues_json")
-    .bind(room.id, review.checkedAt, review.sourceUrl, review.status, review.title, review.description, review.canonical, review.h1, review.robots, JSON.stringify(review.issues)).run();
-  await env.DB.prepare("UPDATE rooms SET last_review_at=? WHERE id=?").bind(review.checkedAt, room.id).run();
+  const started = Date.now();
+  await env.DB.prepare("UPDATE rooms SET search_started_at=? WHERE id=?").bind(started, room.id).run();
+  try {
+    const review = await reviewSite(room.submitted_url, env);
+    await env.DB.prepare("INSERT INTO reviews(room_id,checked_at,source_url,status,title,description,canonical,h1,robots,issues_json) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(room_id) DO UPDATE SET checked_at=excluded.checked_at,source_url=excluded.source_url,status=excluded.status,title=excluded.title,description=excluded.description,canonical=excluded.canonical,h1=excluded.h1,robots=excluded.robots,issues_json=excluded.issues_json")
+      .bind(room.id, review.checkedAt, review.sourceUrl, review.status, review.title, review.description, review.canonical, review.h1, review.robots, JSON.stringify(review.issues)).run();
+    await env.DB.prepare("UPDATE rooms SET last_review_at=?,search_finished_at=? WHERE id=?").bind(review.checkedAt, Date.now(), room.id).run();
+  } catch (cause) {
+    await env.DB.prepare("UPDATE rooms SET search_finished_at=? WHERE id=?").bind(Date.now(), room.id).run();
+    throw cause;
+  }
 }
 
 async function discover(room: RoomRow, subscription: SubscriptionRow, env: AppEnv): Promise<Array<{ domain: string; name: string; sourceUrl: string }>> {
-  const hits = await searchWeb(`${room.display_name} ${room.category} alternatives competitors`, env);
-  return competitorCandidates(hits, room.root_domain, PLANS[subscription.plan].competitors);
+  const started = Date.now();
+  await env.DB.prepare("UPDATE rooms SET search_started_at=? WHERE id=?").bind(started, room.id).run();
+  try {
+    const hits = await searchWeb(`${room.display_name} ${room.category} alternatives competitors`, env, subscription.plan);
+    return competitorCandidates(hits, room.root_domain, PLANS[subscription.plan].competitors);
+  } finally {
+    await env.DB.prepare("UPDATE rooms SET search_finished_at=? WHERE id=?").bind(Date.now(), room.id).run();
+  }
 }
 
-async function chat(room: RoomRow, userId: string, message: string, env: AppEnv): Promise<Response> {
-  if (!hasProvider(env, "exa")) return error("The question service is not available yet.", 503);
+function needsExaAnswer(message: string): boolean {
+  return message.length > 220 || /\b(compare|synthesi[sz]e|analy[sz]e|strategy|explain|recommend|deep research|comprehensive|implications|what does this mean)\b/i.test(message);
+}
+
+async function chat(room: RoomRow, userId: string, message: string, plan: Plan, env: AppEnv): Promise<Response> {
+  if (!searchConfigured(env, plan)) return error("The question service is not available yet.", 503);
   const past = await env.DB.prepare("SELECT role,content FROM conversations WHERE room_id=? AND user_id=? ORDER BY created_at DESC LIMIT 6").bind(room.id, userId).all<{ role: string; content: string }>();
   const context = past.results.reverse().map(row => `${row.role}: ${row.content}`).join("\n").slice(-2500);
   const query = `About ${room.display_name} (${room.root_domain}). Use current public web sources. If evidence is absent, say so. Help with market observations or draft wording but never claim a post was published. Recent conversation:\n${context}\nUser: ${message}`;
-  let answer: string;
-  let citations: Array<{ title: string; url: string }>;
+  const started = Date.now();
+  await env.DB.prepare("UPDATE rooms SET search_started_at=? WHERE id=?").bind(started, room.id).run();
+  let answer = "";
+  let citations: Array<{ title: string; url: string }> = [];
   try {
-    const data = await withProviderKey(env, "exa", async key => {
-      const result = await providerPost("https://api.exa.ai/answer", { "x-api-key": key }, { query }) as { answer?: unknown; citations?: Array<{ title?: unknown; url?: unknown }>; costDollars?: { total?: number } };
-      return { value: result, cost: result.costDollars?.total ?? 0.012 };
-    });
-    answer = typeof data.answer === "string" ? data.answer.slice(0, 8000) : "";
-    citations = (data.citations || []).filter(item => typeof item.url === "string" && canonicalSite(item.url)).slice(0, 8).map(item => ({ title: typeof item.title === "string" ? item.title.slice(0, 180) : String(item.url), url: String(item.url) }));
-    if (!answer) throw new Error("Empty answer");
-  } catch { return error("The question service is temporarily unavailable.", 503); }
-  const now = Date.now();
-  await env.DB.batch([
-    env.DB.prepare("INSERT INTO conversations (id,room_id,user_id,role,content,created_at) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(), room.id, userId, "user", message, now),
-    env.DB.prepare("INSERT INTO conversations (id,room_id,user_id,role,content,citations_json,created_at) VALUES (?,?,?,?,?,?,?)").bind(crypto.randomUUID(), room.id, userId, "assistant", answer, JSON.stringify(citations), now + 1),
-  ]);
-  return json({ answer, citations });
+    if (plan === "partner" && hasProvider(env, "exa") && needsExaAnswer(message)) {
+      try {
+        const data = await withProviderKey(env, "exa", async key => {
+          const result = await providerPost("https://api.exa.ai/answer", { "x-api-key": key }, { query }) as { answer?: unknown; citations?: Array<{ title?: unknown; url?: unknown }>; costDollars?: { total?: number } };
+          return { value: result, cost: result.costDollars?.total ?? 0.012 };
+        });
+        answer = typeof data.answer === "string" ? data.answer.slice(0, 8000) : "";
+        citations = (data.citations || []).filter(item => typeof item.url === "string" && canonicalSite(item.url)).slice(0, 8).map(item => ({ title: typeof item.title === "string" ? item.title.slice(0, 180) : String(item.url), url: String(item.url) }));
+      } catch { /* Fall back to the plan's allowed search providers. */ }
+    }
+    if (!answer) {
+      const hits = await searchWeb(`${room.display_name} ${room.root_domain} ${message}`, env, plan);
+      citations = hits.slice(0, 5).map(hit => ({ title: hit.title, url: hit.url }));
+      answer = citations.length
+        ? `Here are the relevant current sources I found.\n\n${hits.slice(0, 5).map(hit => `${hit.title}: ${hit.excerpt || "Open the source for details."}`).join("\n\n")}\n\nThese are source-backed excerpts, not a generated strategic conclusion.`
+        : "I couldn't find a useful current source for that wording. Try a more specific question.";
+    }
+    const now = Date.now();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO conversations (id,room_id,user_id,role,content,created_at) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(), room.id, userId, "user", message, now),
+      env.DB.prepare("INSERT INTO conversations (id,room_id,user_id,role,content,citations_json,created_at) VALUES (?,?,?,?,?,?,?)").bind(crypto.randomUUID(), room.id, userId, "assistant", answer, JSON.stringify(citations), now + 1),
+      env.DB.prepare("UPDATE rooms SET search_finished_at=? WHERE id=?").bind(now + 1, room.id),
+    ]);
+    return json({ answer, citations });
+  } catch {
+    await env.DB.prepare("UPDATE rooms SET search_finished_at=? WHERE id=?").bind(Date.now(), room.id).run();
+    return error("The question service is temporarily unavailable.", 503);
+  }
 }
 
 export async function handleRooms(request: Request, path: string, env: AppEnv): Promise<Response> {
@@ -101,16 +135,16 @@ export async function handleRooms(request: Request, path: string, env: AppEnv): 
     if ((count?.count || 0) >= limits.rooms) return error("Your plan's website limit is full.", 409);
     const duplicate = await env.DB.prepare("SELECT 1 FROM rooms WHERE owner_id=? AND root_domain=?").bind(user.id, site.domain).first();
     if (duplicate) return error("You already have a room for this website. Delete it before adding this URL again.", 409);
-    if (!searchConfigured(env)) return error("Web search is not configured yet.", 503);
+    if (!searchConfigured(env, subscription.plan)) return error("Web search is not configured yet.", 503);
     let hits;
-    try { hits = await searchWeb(`${site.domain} products services competitors`, env); }
+    try { hits = await searchWeb(`${site.domain} products services competitors`, env, subscription.plan); }
     catch { return error("Search is temporarily unavailable. No room was created.", 503); }
     const selected = Array.isArray(body?.competitors) ? body.competitors : [];
     const selectedDomains = Array.from(new Set(selected.map(value => canonicalSite(value)?.domain).filter((value): value is string => !!value && value !== site.domain))).slice(0, limits.competitors);
     const titleHit = hits.find(hit => canonicalSite(hit.url)?.domain === site.domain);
     const displayName = titleHit?.title.slice(0, 80) || site.domain;
     const now = Date.now();
-    const room: RoomRow = { id: crypto.randomUUID(), owner_id: user.id, root_domain: site.domain, submitted_url: site.url, display_name: displayName, category: categoryFor(`${displayName} ${hits.map(hit => hit.title).join(" ")}`), is_private: body?.private === true ? 1 : 0, created_at: now, last_checked_at: null, last_review_at: null, last_competitor_checked_at: null };
+    const room: RoomRow = { id: crypto.randomUUID(), owner_id: user.id, root_domain: site.domain, submitted_url: site.url, display_name: displayName, category: categoryFor(`${displayName} ${hits.map(hit => hit.title).join(" ")}`), is_private: body?.private === true ? 1 : 0, created_at: now, last_checked_at: null, last_review_at: null, last_competitor_checked_at: null, search_started_at: null, search_finished_at: null };
     try {
       await env.DB.batch([
         env.DB.prepare("INSERT INTO rooms (id,owner_id,root_domain,submitted_url,display_name,category,is_private,created_at) VALUES (?,?,?,?,?,?,?,?)").bind(room.id, room.owner_id, room.root_domain, room.submitted_url, room.display_name, room.category, room.is_private, now),
@@ -160,7 +194,7 @@ export async function handleRooms(request: Request, path: string, env: AppEnv): 
   }
   if (action === "check" && request.method === "POST") {
     if (!await incrementUsage(user.id, "manual_checks", limits.manualChecks, env)) return error("Your check-now allowance is used for this month.", 429);
-    try { return json(await refreshRoom(room, env)); }
+    try { return json(await refreshRoom(room, env, subscription.plan)); }
     catch { await undoUsage(user.id, "manual_checks", env); return error("Search is temporarily unavailable. Your check was not used.", 503); }
   }
   if (action === "review" && request.method === "POST") {
@@ -173,46 +207,57 @@ export async function handleRooms(request: Request, path: string, env: AppEnv): 
     const message = typeof body?.message === "string" ? body.message.trim() : "";
     if (!message || message.length > 1200) return error("Write a question of up to 1,200 characters.");
     if (!await incrementUsage(user.id, "chat", limits.chats, env)) return error("Your question allowance is used for this month.", 429);
-    const result = await chat(room, user.id, message, env);
+    const result = await chat(room, user.id, message, subscription.plan, env);
     if (!result.ok) await undoUsage(user.id, "chat", env);
     return result;
   }
   return error("Not found.", 404);
 }
 
-export async function scheduledChecks(env: AppEnv): Promise<void> {
-  if (!searchConfigured(env)) return;
-  const now = Date.now();
-  const active = await env.DB.prepare("SELECT r.* , s.plan FROM rooms r JOIN subscriptions s ON s.user_id=r.owner_id WHERE s.status IN ('active','trialing') AND s.current_period_end>? AND (r.last_checked_at IS NULL OR r.last_checked_at<=?-CASE s.plan WHEN 'solo' THEN 86400000 WHEN 'studio' THEN 43200000 ELSE 28800000 END) ORDER BY COALESCE(r.last_checked_at,0) LIMIT 5")
-    .bind(Math.floor(now / 1000), now).all<RoomRow & { plan: Plan }>();
+function marketSearchSlot(plan: Plan, weekday: number, hour: number): boolean {
+  if (plan === "solo") return weekday <= 5 && hour === 13;
+  if (plan === "studio") return weekday <= 5 && (hour === 9 || hour === 13);
+  if (weekday <= 4) return hour === 9 || hour === 13 || hour === 21;
+  return weekday === 5 && (hour === 9 || hour === 13 || hour === 15);
+}
+
+function reviewSlot(plan: Plan, day: number, hour: number): boolean {
+  return hour === 21 && (plan === "partner" ? day === 11 || day === 22 : day === 19);
+}
+
+export async function scheduledChecks(env: AppEnv, scheduledAt = Date.now()): Promise<void> {
+  const now = scheduledAt;
+  const clock = newYorkClock(now);
+  const active = await env.DB.prepare("SELECT r.* , s.plan FROM rooms r JOIN subscriptions s ON s.user_id=r.owner_id WHERE s.status IN ('active','trialing') AND s.current_period_end>? ORDER BY COALESCE(r.last_checked_at,0)")
+    .bind(Math.floor(now / 1000)).all<RoomRow & { plan: Plan }>();
   for (const room of active.results) {
-    const interval = 24 * 60 * 60_000 / PLANS[room.plan].checksPerDay;
-    if (!room.last_checked_at || now - room.last_checked_at >= interval) {
-      try { await refreshRoom(room, env); } catch { /* Keep the old timestamp so a later cron can retry. */ }
+    if (marketSearchSlot(room.plan, clock.weekday, clock.hour) && !sameNewYorkHour(room.last_checked_at, now) && searchConfigured(env, room.plan)) {
+      try { await refreshRoom(room, env, room.plan); } catch { /* Keep the prior successful timestamp. */ }
     }
-    if (!room.last_competitor_checked_at || now - room.last_competitor_checked_at >= 7 * 24 * 60 * 60_000) {
+    if (clock.weekday === 3 && clock.hour === 14 && (!room.last_competitor_checked_at || newYorkClock(room.last_competitor_checked_at).date !== clock.date)) {
       const competitors = await env.DB.prepare("SELECT root_domain FROM competitors WHERE room_id=?").bind(room.id).all<{ root_domain: string }>();
       if (competitors.results.length) {
+        await env.DB.prepare("UPDATE rooms SET search_started_at=? WHERE id=?").bind(now, room.id).run();
         try {
           const domains = new Set(competitors.results.map(item => item.root_domain));
           const query = competitors.results.map(item => "site:" + item.root_domain).join(" OR ") + " " + room.category + " news updates";
-          const hits = await searchWeb(query, env);
+          const hits = await searchWeb(query, env, room.plan);
           for (const hit of hits) {
             const site = canonicalSite(hit.url);
             if (!site || !domains.has(site.domain)) continue;
             const hash = await fingerprint(hit);
             await env.DB.prepare("INSERT OR IGNORE INTO findings(id,room_id,fingerprint,kind,title,summary,source_url,published_at,fetched_at,pose) VALUES (?,?,?,?,?,?,?,?,?,?)")
-              .bind(crypto.randomUUID(), room.id, hash, "competitor", hit.title, hit.excerpt || "Open the source for details.", hit.url, hit.publishedAt, Date.now(), 0).run();
+              .bind(crypto.randomUUID(), room.id, hash, "competitor", hit.title, hit.excerpt || "Open the source to read the original.", hit.url, hit.publishedAt, Date.now(), 0).run();
           }
           await env.DB.prepare("UPDATE rooms SET last_competitor_checked_at=? WHERE id=?").bind(now, room.id).run();
-        } catch { /* Retry on the next scheduled run. */ }
+        } catch { /* Retry at the next weekly slot. */ }
+        finally { await env.DB.prepare("UPDATE rooms SET search_finished_at=? WHERE id=?").bind(Date.now(), room.id).run(); }
       } else {
         await env.DB.prepare("UPDATE rooms SET last_competitor_checked_at=? WHERE id=?").bind(now, room.id).run();
       }
     }
-    const reviewInterval = 30 * 24 * 60 * 60_000 / PLANS[room.plan].reviewsPerMonth;
-    if (!room.last_review_at || now - room.last_review_at >= reviewInterval) {
-      try { await saveReview(room, env); } catch { /* Retry on the next scheduled run. */ }
+    if (reviewSlot(room.plan, clock.day, clock.hour) && (!room.last_review_at || newYorkClock(room.last_review_at).date !== clock.date)) {
+      try { await saveReview(room, env); } catch { /* Retry at the next monthly slot. */ }
     }
   }
 }

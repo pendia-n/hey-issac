@@ -278,7 +278,7 @@ function backdrop(scene: THREE.Scene, role: string, dark: boolean) {
   }
 }
 
-export function ModelStage({ category, activity, preview = false }: { category: string; activity: Activity; preview?: boolean }) {
+export function ModelStage({ category, activity, preview = false, update }: { category: string; activity: Activity; preview?: boolean; update?: { title: string; summary: string; sourceUrl: string } | null }) {
   const host = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -382,10 +382,13 @@ export function ModelStage({ category, activity, preview = false }: { category: 
   }, [role, dark]);
   const selectedRole = MODEL_ROLES.find(item => item.value === role) || MODEL_ROLES[0];
   const previewPose = pose === "base" ? "Base character" : pose === "pose1" ? "Working pose" : "Response pose";
-  return <div className="room-stage">
-    <div className="model-canvas" ref={host} aria-label="Interactive 3D character scene" />
-    {loading && !failed && <div className="scene-loading" role="status" aria-live="polite"><span>Loading this room…</span></div>}
-    {failed && <img className="model-fallback" src={"/assets/" + pngName(role, pose)} alt={role + " character"} />}
-    <div className="room-stage-info"><b>{preview ? selectedRole.room + " · " + previewPose : activity === "working" ? "Checking the web" : activity === "responding" ? "A new update is ready" : role === "commercial" ? "Your market room" : "Your " + role + " room"}</b><span>{preview ? "Actual character GLB. No market data is shown." : activity === "working" ? "Your character is looking for useful sources." : activity === "responding" ? "Review the sourced update beside the scene." : "The room changes when its data changes."}</span></div>
+  return <div className={"room-stage" + (update && !preview ? " room-stage-with-update" : "")}>
+    <div className="room-stage-viewer">
+      <div className="model-canvas" ref={host} aria-label="Interactive 3D character scene" />
+      {loading && !failed && <div className="scene-loading" role="status" aria-live="polite"><span>Loading this room…</span></div>}
+      {failed && <img className="model-fallback" src={"/assets/" + pngName(role, pose)} alt={role + " character"} />}
+      <div className="room-stage-info"><b>{preview ? selectedRole.room + " · " + previewPose : activity === "working" ? "Checking the web" : activity === "responding" ? "A new update is ready" : role === "commercial" ? "Your market room" : "Your " + role + " room"}</b><span>{preview ? "Actual character GLB. No market data is shown." : activity === "working" ? "Your character is looking for useful sources." : activity === "responding" ? "Review the sourced update beside the scene." : "The room changes when its data changes."}</span></div>
+    </div>
+    {update && !preview && <aside className="market-update-banner" aria-label="Latest market update"><span className="eyebrow">Latest market update</span><strong>{update.title}</strong><p>{update.summary}</p><a href={update.sourceUrl} target="_blank" rel="noreferrer">Read source <span aria-hidden="true">↗</span></a></aside>}
   </div>;
 }
