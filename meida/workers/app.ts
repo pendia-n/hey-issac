@@ -10,6 +10,14 @@ const requestHandler = createRequestHandler(
   import.meta.env.MODE,
 );
 
+function failureCode(cause: unknown): string {
+  if (cause && typeof cause === "object" && "code" in cause) {
+    const code = (cause as { code?: unknown }).code;
+    if (typeof code === "string" && /^[A-Z0-9_-]{1,40}$/.test(code)) return code;
+  }
+  return cause instanceof Error ? cause.name.slice(0, 40) : "unknown";
+}
+
 export default {
   async fetch(request, env, ctx) {
     const path = new URL(request.url).pathname;
@@ -27,7 +35,10 @@ export default {
         if (path.startsWith("/api/auth/")) return await handleAuth(request, path, env);
         if (path.startsWith("/api/billing/")) return await handleBilling(request, path, env);
         if (path.startsWith("/api/rooms") || path.startsWith("/api/share")) return await handleRooms(request, path, env);
-      } catch {
+      } catch (cause) {
+        if (path === "/api/auth/signup" && request.method === "POST") {
+          console.error("meida_signup_unhandled", { stage: "request_dispatch", code: failureCode(cause) });
+        }
         return error("Service temporarily unavailable.", 503);
       }
       return error("Not found.", 404);

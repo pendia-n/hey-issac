@@ -71,7 +71,7 @@ async function pooledSearch(query: string, env: AppEnv, provider: SearchHit["pro
       const result = await providerPost("https://api.exa.ai/search", { "x-api-key": key }, { query, type: "auto", numResults: 8, contents: { text: { maxCharacters: 600 } } }) as { results?: Array<Record<string, unknown>>; costDollars?: { total?: number } };
       return { value: (result.results || []).map(item => validHit(item.title, item.url, item.text || item.summary, item.publishedDate, provider)).filter((item): item is SearchHit => !!item), cost: result.costDollars?.total ?? EXA_COST_FALLBACK_DOLLARS };
     }
-    const result = await providerPost("https://api.firecrawl.dev/v2/search", { authorization: "Bearer " + key }, { query, limit: 10, sources: [{ type: "web" }] }) as { data?: { web?: Array<Record<string, unknown>> } | Array<Record<string, unknown>> };
+    const result = await providerPost("https://api.firecrawl.dev/v2/search", { authorization: "Bearer " + key }, { query, limit: 22, sources: [{ type: "web" }] }) as { data?: { web?: Array<Record<string, unknown>> } | Array<Record<string, unknown>> };
     const items = Array.isArray(result.data) ? result.data : result.data?.web || [];
     return { value: items.map(item => validHit(item.title, item.url, item.description || item.markdown, item.publishedDate, provider)).filter((item): item is SearchHit => !!item), cost: Math.max(1, Math.ceil(items.length / 10)) * 2 };
   });

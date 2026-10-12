@@ -61,6 +61,14 @@ export function validPassword(password: unknown): password is string {
   return typeof password === "string" && password.length >= 7 && password.length <= 18 && /[a-z]/i.test(password) && /\d/.test(password);
 }
 
+function failureCode(cause: unknown): string {
+  if (cause && typeof cause === "object" && "code" in cause) {
+    const code = (cause as { code?: unknown }).code;
+    if (typeof code === "string" && /^[A-Z0-9_-]{1,40}$/.test(code)) return code;
+  }
+  return cause instanceof Error ? cause.name.slice(0, 40) : "unknown";
+}
+
 async function issueToken(user: UserRow, secret: string): Promise<string> {
   const header = base64Url(enc.encode(JSON.stringify({ alg: "HS256", typ: "JWT" })));
   const payload = base64Url(enc.encode(JSON.stringify({ sub: user.id, ver: user.session_version, iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + LIFETIME })));
@@ -112,10 +120,12 @@ export async function handleAuth(request: Request, path: string, env: AppEnv): P
     const password = body?.password;
     if (!validUsername(username)) return error("Use 3–20 lowercase letters, numbers or underscores; start with a letter.");
     if (!validPassword(password)) return error("Use 7–18 characters with at least one letter and one number.");
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    const user: UserRow = { id: crypto.randomUUID(), username, password_hash: "", password_salt: bytesToHex(salt), session_version: 0, password_changed_at: null, password_changes_24h: 0, created_at: Date.now() };
-    let stage = "password_hash";
+    let stage = "crypto_setup";
+    let user: UserRow | null = null;
     try {
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      user = { id: crypto.randomUUID(), username, password_hash: "", password_salt: bytesToHex(salt), session_version: 0, password_changed_at: null, password_changes_24h: 0, created_at: Date.now() };
+      stage = "password_hash";
       user.password_hash = await passwordHash(password, salt);
       stage = "session_signing";
       const token = await issueToken(user, env.MEIDA_JWT_SECRET);
@@ -123,10 +133,10 @@ export async function handleAuth(request: Request, path: string, env: AppEnv): P
       await env.DB.prepare("INSERT INTO users (id, username, password_hash, password_salt, created_at) VALUES (?,?,?,?,?)")
         .bind(user.id, user.username, user.password_hash, user.password_salt, user.created_at).run();
       return json({ user: { id: user.id, username: user.username } }, 201, { "set-cookie": sessionCookie(token) });
-    } catch {
-      console.error("meida_signup_failed", { stage });
+    } catch (cause) {
+      console.error("meida_signup_failed", { stage, code: failureCode(cause) });
       let collision = null;
-      if (stage === "database_insert") {
+      if (stage === "database_insert" && user) {
         try { collision = await env.DB.prepare("SELECT 1 FROM users WHERE username=?").bind(user.username).first(); } catch { /* Keep the response generic if D1 is unavailable. */ }
       }
       return collision ? error("That username is already taken.", 409) : error("Your account could not be created. Please try again.", 503);
