@@ -4,7 +4,8 @@ import { bodyObject, error, json } from "./types";
 const enc = new TextEncoder();
 const COOKIE = "meida_session";
 const LIFETIME = 28 * 24 * 60 * 60;
-const ROUNDS = 210_000;
+const ROUNDS = 100_000;
+const HASH_PASSES = 3;
 
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
@@ -47,10 +48,14 @@ async function sign(text: string, secret: string): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(text)));
 }
 
-async function passwordHash(password: string, salt: Uint8Array): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
-  const hash = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: ownedBuffer(salt), iterations: ROUNDS, hash: "SHA-256" }, key, 256);
-  return bytesToHex(new Uint8Array(hash));
+export async function passwordHash(password: string, salt: Uint8Array): Promise<string> {
+  let material: Uint8Array = enc.encode(password);
+  // Production Workers cap each PBKDF2 call at 100,000 iterations; local workerd does not.
+  for (let pass = 0; pass < HASH_PASSES; pass++) {
+    const key = await crypto.subtle.importKey("raw", ownedBuffer(material), "PBKDF2", false, ["deriveBits"]);
+    material = new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", salt: ownedBuffer(salt), iterations: ROUNDS, hash: "SHA-256" }, key, 256));
+  }
+  return bytesToHex(material);
 }
 
 export function validUsername(username: unknown): username is string {
