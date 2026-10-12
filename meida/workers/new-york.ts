@@ -49,6 +49,7 @@ export function preferredProviderSlots(provider: "tavily" | "exa" | "firecrawl",
   const weekday = newYorkClock(timestamp).weekday;
   const tavilySlot: Record<number, number> = { 0: 3, 1: 1, 2: 2, 3: 1, 4: 2, 5: 1, 6: 3 };
   const rotatingSlot: Record<number, number> = { 0: 3, 1: 1, 2: 2, 3: 3, 4: 1, 5: 2, 6: 3 };
+  if (provider === "tavily" && weekday === 6) return [];
   const first = provider === "tavily" ? tavilySlot[weekday] : rotatingSlot[weekday];
   return [first, ...[1, 2, 3].filter(slot => slot !== first)];
 }

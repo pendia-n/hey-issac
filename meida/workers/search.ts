@@ -1,6 +1,7 @@
 import { getDomain } from "tldts";
 import type { AppEnv, Plan, RoomRow } from "./types";
-import { hasProvider, providerPost, withProviderKey } from "./provider-pool";
+import { EXA_COST_FALLBACK_DOLLARS, hasProvider, providerPost, withProviderKey } from "./provider-pool";
+import { newYorkClock } from "./new-york";
 
 export interface SearchHit {
   title: string;
@@ -68,11 +69,11 @@ async function pooledSearch(query: string, env: AppEnv, provider: SearchHit["pro
     }
     if (provider === "exa") {
       const result = await providerPost("https://api.exa.ai/search", { "x-api-key": key }, { query, type: "auto", numResults: 8, contents: { text: { maxCharacters: 600 } } }) as { results?: Array<Record<string, unknown>>; costDollars?: { total?: number } };
-      return { value: (result.results || []).map(item => validHit(item.title, item.url, item.text || item.summary, item.publishedDate, provider)).filter((item): item is SearchHit => !!item), cost: result.costDollars?.total ?? 0.007 };
+      return { value: (result.results || []).map(item => validHit(item.title, item.url, item.text || item.summary, item.publishedDate, provider)).filter((item): item is SearchHit => !!item), cost: result.costDollars?.total ?? EXA_COST_FALLBACK_DOLLARS };
     }
-    const result = await providerPost("https://api.firecrawl.dev/v2/search", { authorization: "Bearer " + key }, { query, limit: 22, sources: [{ type: "web" }] }) as { data?: { web?: Array<Record<string, unknown>> } | Array<Record<string, unknown>> };
+    const result = await providerPost("https://api.firecrawl.dev/v2/search", { authorization: "Bearer " + key }, { query, limit: 10, sources: [{ type: "web" }] }) as { data?: { web?: Array<Record<string, unknown>> } | Array<Record<string, unknown>> };
     const items = Array.isArray(result.data) ? result.data : result.data?.web || [];
-    return { value: items.map(item => validHit(item.title, item.url, item.description || item.markdown, item.publishedDate, provider)).filter((item): item is SearchHit => !!item), cost: Math.ceil(items.length / 10) * 2 };
+    return { value: items.map(item => validHit(item.title, item.url, item.description || item.markdown, item.publishedDate, provider)).filter((item): item is SearchHit => !!item), cost: Math.max(1, Math.ceil(items.length / 10)) * 2 };
   });
 }
 
@@ -82,7 +83,7 @@ export function searchConfigured(env: AppEnv, plan: Plan): boolean {
 
 export async function searchWeb(query: string, env: AppEnv, plan: Plan): Promise<SearchHit[]> {
   const providers: Array<() => Promise<SearchHit[]>> = [];
-  if (hasProvider(env, "tavily")) providers.push(() => pooledSearch(query, env, "tavily"));
+  if (newYorkClock().weekday !== 6 && hasProvider(env, "tavily")) providers.push(() => pooledSearch(query, env, "tavily"));
   if (hasProvider(env, "firecrawl")) providers.push(() => pooledSearch(query, env, "firecrawl"));
   if (plan !== "solo" && hasProvider(env, "exa")) providers.push(() => pooledSearch(query, env, "exa"));
   if (!providers.length) throw new Error("Web search is not configured.");
@@ -108,32 +109,37 @@ export function competitorCandidates(hits: SearchHit[], ownDomain: string, limit
   }).slice(0, limit);
 }
 
-export async function reviewSite(siteUrl: string, env: AppEnv): Promise<SiteReview> {
+async function firecrawlPage(siteUrl: string, env: AppEnv): Promise<Response | null> {
+  if (!hasProvider(env, "firecrawl")) return null;
+  try {
+    const result = await withProviderKey(env, "firecrawl", async key => {
+      const data = await providerPost("https://api.firecrawl.dev/v2/scrape", { authorization: "Bearer " + key }, { url: siteUrl, formats: ["html"] }) as { data?: { html?: string } };
+      return { value: data, cost: 1 };
+    });
+    return result.data?.html ? new Response(result.data.html, { headers: { "content-type": "text/html" } }) : null;
+  } catch { return null; }
+}
+
+export async function reviewSite(siteUrl: string, env: AppEnv, preferFirecrawl = false): Promise<SiteReview> {
   const review: SiteReview = { status: "unavailable", sourceUrl: siteUrl, checkedAt: Date.now(), title: null, description: null, canonical: null, h1: null, robots: null, issues: [] };
-  let response: Response | null = null;
+  let response: Response | null = preferFirecrawl ? await firecrawlPage(siteUrl, env) : null;
   let checkedUrl = siteUrl;
   try {
-    for (let redirectCount = 0; redirectCount <= 4; redirectCount++) {
-      const current = canonicalSite(checkedUrl);
-      if (!current) break;
-      response = await fetch(current.url, { redirect: "manual", headers: { accept: "text/html" }, signal: AbortSignal.timeout(10_000) });
-      if (response.status < 300 || response.status >= 400) { checkedUrl = current.url; break; }
-      const location = response.headers.get("location");
-      if (!location || redirectCount === 4) { response = null; break; }
-      checkedUrl = new URL(location, current.url).toString();
+    if (!response) {
+      for (let redirectCount = 0; redirectCount <= 4; redirectCount++) {
+        const current = canonicalSite(checkedUrl);
+        if (!current) break;
+        response = await fetch(current.url, { redirect: "manual", headers: { accept: "text/html" }, signal: AbortSignal.timeout(10_000) });
+        if (response.status < 300 || response.status >= 400) { checkedUrl = current.url; break; }
+        const location = response.headers.get("location");
+        if (!location || redirectCount === 4) { response = null; break; }
+        checkedUrl = new URL(location, current.url).toString();
+      }
+      if (!response?.ok || !response.headers.get("content-type")?.toLowerCase().includes("text/html")) response = null;
     }
-    if (!response?.ok || !response.headers.get("content-type")?.toLowerCase().includes("text/html")) response = null;
   } catch { /* The page may block public fetching. */ }
   review.sourceUrl = checkedUrl;
-  if (!response && hasProvider(env, "firecrawl")) {
-    try {
-      const result = await withProviderKey(env, "firecrawl", async key => {
-        const data = await providerPost("https://api.firecrawl.dev/v2/scrape", { authorization: "Bearer " + key }, { url: siteUrl, formats: ["html"] }) as { data?: { html?: string } };
-        return { value: data, cost: 1 };
-      });
-      if (result.data?.html) response = new Response(result.data.html, { headers: { "content-type": "text/html" } });
-    } catch { /* Report unavailable, not a fake review. */ }
-  }
+  if (!response && !preferFirecrawl) response = await firecrawlPage(siteUrl, env);
   if (!response) return review;
 
   let inTitle = false;

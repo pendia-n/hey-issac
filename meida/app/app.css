@@ -117,3 +117,6 @@ h2{font-size:2rem}
 [data-theme="dark"] .segmented-control button:hover{background:#2a3931}
 [data-theme="dark"] .segmented-control button.selected{background:#287a64;color:#fff}
 [data-theme="dark"] .scene-loading span{background:rgba(25,35,30,.95);color:#e6ede9}
+.candidate-option{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}
+.candidate-option>a{display:inline-flex;align-items:center;gap:3px;color:#246b59;font-size:.78rem;white-space:nowrap}
+[data-theme="dark"] .candidate-option>a{color:#80c9ac}

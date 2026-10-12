@@ -2,6 +2,7 @@ import type { AppEnv } from "./types";
 import { preferredProviderSlots } from "./new-york";
 
 export type Provider = "tavily" | "exa" | "firecrawl";
+export const EXA_COST_FALLBACK_DOLLARS = 0.13;
 type KeyName = keyof Pick<AppEnv, `TAVILY_API_KEY_${1 | 2 | 3}` | `EXA_API_KEY_${1 | 2 | 3}` | `FIRECRAWL_API_KEY_${1 | 2 | 3}`>;
 
 const keyNames: Record<Provider, readonly KeyName[]> = {
@@ -95,15 +96,17 @@ export async function withProviderKey<T>(
     }
     if (current.blocked_until > now) continue;
     if ((provider === "firecrawl" || provider === "tavily") && current.remaining !== null && current.remaining < 1) continue;
+    if (provider === "exa" && current.remaining !== null && current.remaining <= 0 && !(current.blocked_until > 0 && current.blocked_until <= now)) continue;
     try {
       const result = await run(key);
       const charge = result.cost ?? 1;
       const exaResetObserved = provider === "exa" && current.remaining === 0 && current.blocked_until > 0 && current.blocked_until <= now;
       const baseline = provider === "exa" ? (exaResetObserved ? 10 : current.remaining ?? 10) : current.remaining;
+      const remaining = baseline !== null ? Math.max(0, baseline - charge) : null;
       await patchState(env, provider, slot, {
         consumed_estimate: current.consumed_estimate + charge,
-        remaining: baseline !== null ? Math.max(0, baseline - charge) : null,
-        blocked_until: 0,
+        remaining,
+        blocked_until: provider === "exa" && remaining === 0 ? now + 24 * 60 * 60_000 : 0,
       });
       return result.value;
     } catch (cause) {

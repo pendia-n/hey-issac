@@ -1,7 +1,7 @@
 import { currentUser } from "./auth";
 import { hasPaidAccess, subscriptionFor } from "./billing";
 import { canonicalSite, categoryFor, competitorCandidates, fingerprint, refreshRoom, reviewSite, searchConfigured, searchWeb } from "./search";
-import { hasProvider, providerPost, withProviderKey } from "./provider-pool";
+import { EXA_COST_FALLBACK_DOLLARS, hasProvider, providerPost, withProviderKey } from "./provider-pool";
 import type { AppEnv, Plan, RoomRow, SubscriptionRow } from "./types";
 import { bodyObject, error, json, monthKey, PLANS } from "./types";
 import { newYorkClock, sameNewYorkHour } from "./new-york";
@@ -32,11 +32,11 @@ async function undoUsage(userId: string, kind: string, env: AppEnv): Promise<voi
   await env.DB.prepare("UPDATE usage SET count=MAX(0,count-1) WHERE user_id=? AND month=? AND kind=?").bind(userId, monthKey(), kind).run();
 }
 
-async function saveReview(room: RoomRow, env: AppEnv): Promise<void> {
+async function saveReview(room: RoomRow, env: AppEnv, preferFirecrawl = false): Promise<void> {
   const started = Date.now();
   await env.DB.prepare("UPDATE rooms SET search_started_at=? WHERE id=?").bind(started, room.id).run();
   try {
-    const review = await reviewSite(room.submitted_url, env);
+    const review = await reviewSite(room.submitted_url, env, preferFirecrawl);
     await env.DB.prepare("INSERT INTO reviews(room_id,checked_at,source_url,status,title,description,canonical,h1,robots,issues_json) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(room_id) DO UPDATE SET checked_at=excluded.checked_at,source_url=excluded.source_url,status=excluded.status,title=excluded.title,description=excluded.description,canonical=excluded.canonical,h1=excluded.h1,robots=excluded.robots,issues_json=excluded.issues_json")
       .bind(room.id, review.checkedAt, review.sourceUrl, review.status, review.title, review.description, review.canonical, review.h1, review.robots, JSON.stringify(review.issues)).run();
     await env.DB.prepare("UPDATE rooms SET last_review_at=?,search_finished_at=? WHERE id=?").bind(review.checkedAt, Date.now(), room.id).run();
@@ -75,7 +75,7 @@ async function chat(room: RoomRow, userId: string, message: string, plan: Plan, 
       try {
         const data = await withProviderKey(env, "exa", async key => {
           const result = await providerPost("https://api.exa.ai/answer", { "x-api-key": key }, { query }) as { answer?: unknown; citations?: Array<{ title?: unknown; url?: unknown }>; costDollars?: { total?: number } };
-          return { value: result, cost: result.costDollars?.total ?? 0.012 };
+          return { value: result, cost: result.costDollars?.total ?? EXA_COST_FALLBACK_DOLLARS };
         });
         answer = typeof data.answer === "string" ? data.answer.slice(0, 8000) : "";
         citations = (data.citations || []).filter(item => typeof item.url === "string" && canonicalSite(item.url)).slice(0, 8).map(item => ({ title: typeof item.title === "string" ? item.title.slice(0, 180) : String(item.url), url: String(item.url) }));
@@ -257,7 +257,7 @@ export async function scheduledChecks(env: AppEnv, scheduledAt = Date.now()): Pr
       }
     }
     if (reviewSlot(room.plan, clock.day, clock.hour) && (!room.last_review_at || newYorkClock(room.last_review_at).date !== clock.date)) {
-      try { await saveReview(room, env); } catch { /* Retry at the next monthly slot. */ }
+      try { await saveReview(room, env, true); } catch { /* Retry at the next monthly slot. */ }
     }
   }
 }

@@ -113,15 +113,24 @@ export async function handleAuth(request: Request, path: string, env: AppEnv): P
     if (!validUsername(username)) return error("Use 3–20 lowercase letters, numbers or underscores; start with a letter.");
     if (!validPassword(password)) return error("Use 7–18 characters with at least one letter and one number.");
     const salt = crypto.getRandomValues(new Uint8Array(16));
-    const user: UserRow = { id: crypto.randomUUID(), username, password_hash: await passwordHash(password, salt), password_salt: bytesToHex(salt), session_version: 0, password_changed_at: null, password_changes_24h: 0, created_at: Date.now() };
+    const user: UserRow = { id: crypto.randomUUID(), username, password_hash: "", password_salt: bytesToHex(salt), session_version: 0, password_changed_at: null, password_changes_24h: 0, created_at: Date.now() };
+    let stage = "password_hash";
     try {
+      user.password_hash = await passwordHash(password, salt);
+      stage = "session_signing";
+      const token = await issueToken(user, env.MEIDA_JWT_SECRET);
+      stage = "database_insert";
       await env.DB.prepare("INSERT INTO users (id, username, password_hash, password_salt, created_at) VALUES (?,?,?,?,?)")
         .bind(user.id, user.username, user.password_hash, user.password_salt, user.created_at).run();
+      return json({ user: { id: user.id, username: user.username } }, 201, { "set-cookie": sessionCookie(token) });
     } catch {
-      const collision = await env.DB.prepare("SELECT 1 FROM users WHERE username=?").bind(user.username).first();
+      console.error("meida_signup_failed", { stage });
+      let collision = null;
+      if (stage === "database_insert") {
+        try { collision = await env.DB.prepare("SELECT 1 FROM users WHERE username=?").bind(user.username).first(); } catch { /* Keep the response generic if D1 is unavailable. */ }
+      }
       return collision ? error("That username is already taken.", 409) : error("Your account could not be created. Please try again.", 503);
     }
-    return json({ user: { id: user.id, username: user.username } }, 201, { "set-cookie": sessionCookie(await issueToken(user, env.MEIDA_JWT_SECRET)) });
   }
 
   if (path === "/api/auth/signin" && request.method === "POST") {
