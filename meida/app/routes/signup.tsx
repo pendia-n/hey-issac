@@ -30,7 +30,7 @@ export default function Signup() {
     if (availability === "taken") { setMessage("That username is already taken."); return; }
     if (!validPassword(password)) { setMessage("Use 7–18 characters with at least one letter and one number."); return; }
     setBusy(true);
-    try { await api("/api/auth/signup", "POST", { username, password }); await session.refresh(); navigate("/rooms"); }
+    try { await api("/api/auth/signup", "POST", { username, password }); await session.refresh(); navigate("/pricing", { replace: true }); }
     catch (cause) { setMessage(cause instanceof Error ? cause.message : "Account could not be created."); }
     finally { setBusy(false); }
   }
