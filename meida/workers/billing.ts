@@ -19,7 +19,7 @@ interface StripeEvent {
 }
 
 function stripeReady(env: AppEnv): boolean {
-  return !!(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET && env.STRIPE_PRICE_SOLO && env.STRIPE_PRICE_STUDIO && env.STRIPE_PRICE_PARTNER);
+  return !!(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET);
 }
 
 async function stripe(env: AppEnv, path: string, method = "GET", form?: URLSearchParams, idempotencyKey?: string): Promise<Record<string, unknown>> {
@@ -38,13 +38,6 @@ function customerId(customer: StripeSubscription["customer"]): string {
   return typeof customer === "string" ? customer : customer.id;
 }
 
-function planForPrice(env: AppEnv, id: string | undefined): Plan | null {
-  if (id && id === env.STRIPE_PRICE_SOLO) return "solo";
-  if (id && id === env.STRIPE_PRICE_STUDIO) return "studio";
-  if (id && id === env.STRIPE_PRICE_PARTNER) return "partner";
-  return null;
-}
-
 export async function subscriptionFor(userId: string, env: AppEnv): Promise<SubscriptionRow | null> {
   return env.DB.prepare("SELECT * FROM subscriptions WHERE user_id=?").bind(userId).first<SubscriptionRow>();
 }
@@ -61,8 +54,7 @@ async function syncSubscription(env: AppEnv, record: StripeSubscription, hintedU
   const existing = await env.DB.prepare("SELECT user_id,plan FROM subscriptions WHERE stripe_subscription_id=? OR stripe_customer_id=? LIMIT 1")
     .bind(record.id, customerId(record.customer)).first<{ user_id: string; plan: Plan }>();
   const userId = record.metadata?.user_id || hintedUserId || existing?.user_id;
-  const priceId = record.items?.data?.[0]?.price?.id;
-  const plan = isPlan(record.metadata?.plan) ? record.metadata.plan : planForPrice(env, priceId) || existing?.plan;
+  const plan = isPlan(record.metadata?.plan) ? record.metadata.plan : existing?.plan;
   if (!userId || !plan) throw new Error("Subscription has no Meida user/plan mapping");
   const periodEnd = record.current_period_end || record.items?.data?.[0]?.current_period_end || 0;
   await env.DB.prepare("INSERT INTO subscriptions (user_id,stripe_customer_id,stripe_subscription_id,plan,status,current_period_end,cancel_at_period_end) VALUES (?,?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET stripe_customer_id=excluded.stripe_customer_id,stripe_subscription_id=excluded.stripe_subscription_id,plan=excluded.plan,status=excluded.status,current_period_end=excluded.current_period_end,cancel_at_period_end=excluded.cancel_at_period_end")
@@ -94,9 +86,10 @@ export async function handleBilling(request: Request, path: string, env: AppEnv)
     if (hasUnendedSubscription(current)) return error("Cancel your current subscription before you choose another plan.", 409);
     const body = await bodyObject(request);
     if (!isPlan(body?.plan)) return error("Choose a valid plan.");
-    const price = body.plan === "solo" ? env.STRIPE_PRICE_SOLO : body.plan === "studio" ? env.STRIPE_PRICE_STUDIO : env.STRIPE_PRICE_PARTNER;
+    const price = body.plan === "solo" ? 1900 : body.plan === "studio" ? 4900 : 12900;
+    const name = body.plan === "solo" ? "Meida Solo" : body.plan === "studio" ? "Meida Studio" : "Meida Partner";
     const origin = new URL(request.url).origin;
-    const form = new URLSearchParams({ mode: "subscription", "line_items[0][price]": price!, "line_items[0][quantity]": "1", success_url: `${origin}/billing?checkout=complete`, cancel_url: `${origin}/pricing?checkout=cancelled`, client_reference_id: user.id, "subscription_data[metadata][user_id]": user.id, "subscription_data[metadata][plan]": body.plan });
+    const form = new URLSearchParams({ mode: "subscription", "line_items[0][price_data][currency]": "usd", "line_items[0][price_data][unit_amount]": String(price), "line_items[0][price_data][product_data][name]": name, "line_items[0][price_data][recurring][interval]": "month", "line_items[0][quantity]": "1", success_url: `${origin}/billing?checkout=complete`, cancel_url: `${origin}/pricing?checkout=cancelled`, client_reference_id: user.id, "subscription_data[metadata][user_id]": user.id, "subscription_data[metadata][plan]": body.plan });
     if (current?.stripe_customer_id) form.set("customer", current.stripe_customer_id);
     try {
       const session = await stripe(env, "/checkout/sessions", "POST", form);

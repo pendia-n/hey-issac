@@ -6,9 +6,6 @@ export interface AppEnv {
   MEIDA_JWT_SECRET: string;
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
-  STRIPE_PRICE_SOLO?: string;
-  STRIPE_PRICE_STUDIO?: string;
-  STRIPE_PRICE_PARTNER?: string;
   TAVILY_API_KEY_1?: string;
   TAVILY_API_KEY_2?: string;
   TAVILY_API_KEY_3?: string;

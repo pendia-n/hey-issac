@@ -80,15 +80,15 @@ Provider keys are not read, printed, or used in live tests during deployment. Ad
 
 ## Stripe setup and webhook
 
-Before checkout can work, create three recurring monthly Stripe prices matching the displayed Solo, Studio, and Partner amounts, and configure `STRIPE_SECRET_KEY`, `STRIPE_PRICE_SOLO`, `STRIPE_PRICE_STUDIO`, and `STRIPE_PRICE_PARTNER`. Stripe prices are configuration, not hard-coded customer records.
+Checkout creates the displayed Solo ($19/month), Studio ($49/month), and Partner ($129/month) recurring Prices inline. No Stripe Price IDs need to be created or configured. Configure `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` as Worker secrets.
 
 1. Deploy Meida and copy its HTTPS Worker URL.
 2. In Stripe Dashboard, open Developers → Webhooks and add `https://<worker-host>/api/stripe/webhook` as the destination.
 3. Subscribe the destination to `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, and `invoice.payment_failed`.
 4. Reveal the destination's signing secret in Stripe and set it in Cloudflare as `STRIPE_WEBHOOK_SECRET`. Do not put the value in source, chat, or `APP.md`.
-5. Confirm all three recurring price IDs and the Stripe secret are configured, then perform a deliberate Stripe test-mode checkout and webhook test before enabling live payments.
+5. Perform a deliberate Stripe test-mode checkout and webhook test before enabling live payments.
 
-The billing page offers a 50% refund of the first successful subscription payment only during the first 47 hours after that payment; requesting it also cancels the subscription immediately. Renewals are not eligible. Refund/cancel behavior must be verified in Stripe test mode before live sales. Stripe credentials and price IDs are not present in the deployment until the owner configures them.
+The billing page offers a 50% refund of the first successful subscription payment only during the first 47 hours after that payment; requesting it also cancels the subscription immediately. Renewals are not eligible. Refund/cancel behavior must be verified in Stripe test mode before live sales. Stripe credentials are not present in the deployment until the owner configures them.
 
 ## Deploy checklist
 
@@ -96,7 +96,7 @@ The billing page offers a 50% refund of the first successful subscription paymen
 - Confirm the 48 authored `.glb` and `.png` model files from `haissac-asset` are present in R2. They are served publicly through `/assets/<filename>` with explicit GLB/PNG MIME types.
 - Set the already-generated `MEIDA_JWT_SECRET` in the Worker secret store; never print or commit its value.
 - Add provider key bindings after deployment. Do not run paid/live-provider checks without an explicit separate request.
-- Configure Stripe keys and price IDs; set up the webhook as above. Until then, checkout remains unavailable by design.
+- Configure the Stripe API key and webhook secret; set up the webhook as above. Until then, checkout remains unavailable by design.
 - Build and inspect desktop, tablet, and narrow-screen UI. PWA support is not included.
 
 ## Runtime and data

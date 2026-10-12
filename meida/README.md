@@ -20,7 +20,7 @@ For local Wrangler development, put the same variable in `.dev.vars`. Do not com
 
 ## Stripe setup
 
-Create three recurring monthly Stripe Prices for Solo, Studio, and Partner. Add their IDs to the Worker variables `STRIPE_PRICE_SOLO`, `STRIPE_PRICE_STUDIO`, and `STRIPE_PRICE_PARTNER`. Add `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` as Worker secrets. Checkout remains unavailable until all five values are configured.
+Checkout creates the Solo ($19/month), Studio ($49/month), and Partner ($129/month) recurring Prices inline. No Stripe Price IDs need to be created or configured. Add `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` as Worker secrets. Checkout remains unavailable until both are configured.
 
 To connect Stripe webhooks:
 
@@ -28,7 +28,7 @@ To connect Stripe webhooks:
 2. In Stripe Dashboard, open **Developers → Webhooks** and add an endpoint at `https://<your-worker-host>/api/stripe/webhook`.
 3. Subscribe the endpoint to `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, and `invoice.payment_failed`.
 4. Reveal the endpoint's signing secret once and save it as the Worker secret `STRIPE_WEBHOOK_SECRET`. Save your Stripe API secret as `STRIPE_SECRET_KEY`.
-5. Configure the three Stripe Price IDs as the matching Worker variables, then redeploy. Test checkout and webhook delivery in Stripe test mode before switching to live-mode keys and Prices.
+5. Test checkout and webhook delivery in Stripe test mode before switching to a live-mode API key and webhook secret.
 
 The Worker verifies Stripe's timestamped signature against the raw request body before processing an event. It stores handled event IDs so Stripe retries do not normally repeat the work. The Billing page offers a 50% refund of the first successful payment when requested within 47 hours; submitting that request also cancels the subscription immediately.
 
