@@ -1,7 +1,8 @@
 import { createRequestHandler } from "react-router";
 import { handleAuth } from "./auth";
 import { handleBilling, handleStripeWebhook } from "./billing";
-import { handleRooms, scheduledChecks } from "./rooms";
+import { handleRooms } from "./rooms";
+import { scheduledChecks } from "./schedule";
 import type { AppEnv } from "./types";
 import { error, sameOrigin } from "./types";
 

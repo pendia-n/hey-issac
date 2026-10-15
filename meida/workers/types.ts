@@ -1,6 +1,8 @@
 export type Plan = "solo" | "studio" | "partner";
 
 export interface AppEnv {
+  AUTOMATIC_RESEARCH?: string;
+  EXA_CREDIT_WINDOWS?: string;
   DB: D1Database;
   ASSETS: R2Bucket;
   MEIDA_JWT_SECRET: string;
@@ -57,6 +59,10 @@ export interface RoomRow {
   last_competitor_checked_at: number | null;
   search_started_at: number | null;
   search_finished_at: number | null;
+  overview_json?: string | null;
+  profile_checked_at?: number | null;
+  discovery_checked_at?: number | null;
+  candidates_json?: string;
 }
 
 export const PLANS = {

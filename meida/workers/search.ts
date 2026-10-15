@@ -1,7 +1,6 @@
 import { getDomain } from "tldts";
 import type { AppEnv, Plan, RoomRow } from "./types";
-import { EXA_COST_FALLBACK_DOLLARS, hasProvider, providerPost, withProviderKey } from "./provider-pool";
-import { newYorkClock } from "./new-york";
+import { EXA_COSTS, hasProvider, providerPost, withProviderKey } from "./provider-pool";
 
 export interface SearchHit {
   title: string;
@@ -21,13 +20,14 @@ export interface SiteReview {
   h1: string | null;
   robots: string | null;
   issues: string[];
+  evidence: { h1Count: number; internalLinks: string[]; jsonLdPresent: boolean; pageText: string; xRobots: string | null };
 }
 
 function clean(value: unknown, limit = 500): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, limit) : "";
 }
 
-function concise(value: unknown, limit = 210): string {
+function concise(value: unknown, limit = 600): string {
   const text = clean(value, 1200);
   if (text.length <= limit) return text;
   const boundary = text.lastIndexOf(" ", limit - 1);
@@ -61,42 +61,65 @@ function validHit(title: unknown, url: unknown, excerpt: unknown, date: unknown,
   return { title: name, url, excerpt: concise(excerpt), publishedAt: published(date), provider };
 }
 
-async function pooledSearch(query: string, env: AppEnv, provider: SearchHit["provider"]): Promise<SearchHit[]> {
+export type SearchPurpose = "news" | "discovery" | "overview" | "chat";
+async function pooledSearch(query: string, env: AppEnv, provider: SearchHit["provider"], purpose: SearchPurpose): Promise<SearchHit[]> {
+  const news = purpose === "news";
   return withProviderKey(env, provider, async key => {
     if (provider === "tavily") {
-      const result = await providerPost("https://api.tavily.com/search", { authorization: "Bearer " + key }, { query, search_depth: "basic", max_results: 8, include_answer: false }) as { results?: Array<Record<string, unknown>> };
-      return { value: (result.results || []).map(item => validHit(item.title, item.url, item.content, item.published_date, provider)).filter((item): item is SearchHit => !!item), cost: 1 };
+      const result = await providerPost("https://api.tavily.com/search", { authorization: "Bearer " + key }, {
+        query, search_depth: "basic", max_results: 8, include_answer: false, include_usage: true,
+        include_published_date: true, include_images: false, include_raw_content: false,
+        ...(news ? { topic: "news", time_range: "week" } : { topic: "general" }),
+      }) as { results?: Array<Record<string, unknown>>; usage?: { credits?: number } };
+      return { value: (result.results || []).map(item => validHit(item.title, item.url, item.content, item.published_date, provider)).filter((item): item is SearchHit => !!item), cost: result.usage?.credits };
     }
     if (provider === "exa") {
-      const result = await providerPost("https://api.exa.ai/search", { "x-api-key": key }, { query, type: "auto", numResults: 8, contents: { text: { maxCharacters: 600 } } }) as { results?: Array<Record<string, unknown>>; costDollars?: { total?: number } };
-      return { value: (result.results || []).map(item => validHit(item.title, item.url, item.text || item.summary, item.publishedDate, provider)).filter((item): item is SearchHit => !!item), cost: result.costDollars?.total ?? EXA_COST_FALLBACK_DOLLARS };
+      const result = await providerPost("https://api.exa.ai/search", { "x-api-key": key }, {
+        query, type: "auto", numResults: 8, contents: { highlights: true },
+        ...(news ? { category: "news", startPublishedDate: new Date(Date.now() - 7 * 86400_000).toISOString() } : {}),
+      }) as { results?: Array<Record<string, unknown>>; costDollars?: { total?: number } };
+      return { value: (result.results || []).map(item => validHit(item.title, item.url, Array.isArray(item.highlights) ? item.highlights.join(" ") : item.text || item.summary, item.publishedDate, provider)).filter((item): item is SearchHit => !!item), cost: result.costDollars?.total };
     }
-    const result = await providerPost("https://api.firecrawl.dev/v2/search", { authorization: "Bearer " + key }, { query, limit: 22, sources: [{ type: "web" }] }) as { data?: { web?: Array<Record<string, unknown>> } | Array<Record<string, unknown>> };
-    const items = Array.isArray(result.data) ? result.data : result.data?.web || [];
-    return { value: items.map(item => validHit(item.title, item.url, item.description || item.markdown, item.publishedDate, provider)).filter((item): item is SearchHit => !!item), cost: Math.max(1, Math.ceil(items.length / 10)) * 2 };
-  });
+    const result = await providerPost("https://api.firecrawl.dev/v2/search", { authorization: "Bearer " + key }, {
+      query, limit: 10, sources: [news ? "news" : "web"],
+    }) as { success?: boolean; creditsUsed?: number; data?: { web?: Array<Record<string, unknown>>; news?: Array<Record<string, unknown>> } | Array<Record<string, unknown>> };
+    if (result.success === false) throw new Error("Search unavailable.");
+    const items = Array.isArray(result.data) ? result.data : news ? result.data?.news || [] : result.data?.web || [];
+    return { value: items.map(item => validHit(item.title, item.url, item.snippet || item.description || item.markdown, item.publishedDate || item.date, provider)).filter((item): item is SearchHit => !!item), cost: result.creditsUsed };
+  }, { purpose, estimate: provider === "tavily" ? 1 : provider === "firecrawl" ? 2 : EXA_COSTS.auto });
 }
 
-export function searchConfigured(env: AppEnv, plan: Plan): boolean {
-  return hasProvider(env, "tavily") || hasProvider(env, "firecrawl") || (plan !== "solo" && hasProvider(env, "exa"));
+export function searchConfigured(env: AppEnv, _plan?: Plan): boolean {
+  return hasProvider(env, "tavily") || hasProvider(env, "firecrawl") || hasProvider(env, "exa");
 }
 
-export async function searchWeb(query: string, env: AppEnv, plan: Plan): Promise<SearchHit[]> {
-  const providers: Array<() => Promise<SearchHit[]>> = [];
-  if (newYorkClock().weekday !== 6 && hasProvider(env, "tavily")) providers.push(() => pooledSearch(query, env, "tavily"));
-  if (hasProvider(env, "firecrawl")) providers.push(() => pooledSearch(query, env, "firecrawl"));
-  if (plan !== "solo" && hasProvider(env, "exa")) providers.push(() => pooledSearch(query, env, "exa"));
-  if (!providers.length) throw new Error("Web search is not configured.");
-  for (const run of providers) {
+export async function searchWeb(query: string, env: AppEnv, _plan: Plan, purpose: SearchPurpose = "news"): Promise<SearchHit[]> {
+  let providers: SearchHit["provider"][] = ["tavily", "firecrawl", "exa"];
+  const budget = await env.DB.prepare("SELECT COUNT(*) AS count,SUM(remaining) AS remaining FROM provider_key_state WHERE provider='tavily'").first<{ count: number; remaining: number | null }>();
+  if ((budget?.count || 0) >= 3 && budget?.remaining !== null && (budget?.remaining ?? 3000) < 600) providers = ["firecrawl", "tavily", "exa"];
+  for (const provider of providers) {
+    if (!hasProvider(env, provider)) continue;
     try {
-      return await run();
-    } catch {
-      // Try the next configured provider without leaking response bodies or keys.
-    }
+      const hits = await pooledSearch(query, env, provider, purpose);
+      const unique = new Map<string, SearchHit>();
+      for (const hit of hits) {
+        if (purpose === "news" && hit.publishedAt !== null && hit.publishedAt < Date.now() - 7 * 86400_000) continue;
+        unique.set(normalizeSource(hit.url), hit);
+      }
+      return [...unique.values()];
+    } catch { /* Retry another provider only for an actual failed request. */ }
   }
   throw new Error("Web search is temporarily unavailable.");
 }
 
+export function normalizeSource(value: string): string {
+  const url = new URL(value);
+  url.hash = "";
+  for (const key of [...url.searchParams.keys()]) if (/^utm_|^(fbclid|gclid|ref)$/i.test(key)) url.searchParams.delete(key);
+  url.searchParams.sort();
+  url.hostname = url.hostname.replace(/^www\./, "");
+  return url.toString().replace(/\/$/, "");
+}
 const excludedCompetitors = new Set(["youtube.com", "reddit.com", "facebook.com", "instagram.com", "linkedin.com", "wikipedia.org", "g2.com", "capterra.com", "trustpilot.com", "medium.com", "x.com"]);
 
 export function competitorCandidates(hits: SearchHit[], ownDomain: string, limit: number): Array<{ domain: string; name: string; sourceUrl: string }> {
@@ -113,16 +136,16 @@ async function firecrawlPage(siteUrl: string, env: AppEnv): Promise<Response | n
   if (!hasProvider(env, "firecrawl")) return null;
   try {
     const result = await withProviderKey(env, "firecrawl", async key => {
-      const data = await providerPost("https://api.firecrawl.dev/v2/scrape", { authorization: "Bearer " + key }, { url: siteUrl, formats: ["html"] }) as { data?: { html?: string } };
-      return { value: data, cost: 1 };
-    });
+      const data = await providerPost("https://api.firecrawl.dev/v2/scrape", { authorization: "Bearer " + key }, { url: siteUrl, formats: ["html"], onlyMainContent: false, maxAge: 0, parsers: [] }, 60_000) as { data?: { html?: string } };
+      return { value: data };
+    }, { purpose: "page-review", estimate: 1 });
     return result.data?.html ? new Response(result.data.html, { headers: { "content-type": "text/html" } }) : null;
   } catch { return null; }
 }
 
-export async function reviewSite(siteUrl: string, env: AppEnv, preferFirecrawl = false): Promise<SiteReview> {
-  const review: SiteReview = { status: "unavailable", sourceUrl: siteUrl, checkedAt: Date.now(), title: null, description: null, canonical: null, h1: null, robots: null, issues: [] };
-  let response: Response | null = preferFirecrawl ? await firecrawlPage(siteUrl, env) : null;
+export async function reviewSite(siteUrl: string, env: AppEnv): Promise<SiteReview> {
+  const review: SiteReview = { status: "unavailable", sourceUrl: siteUrl, checkedAt: Date.now(), title: null, description: null, canonical: null, h1: null, robots: null, issues: [], evidence: { h1Count: 0, internalLinks: [], jsonLdPresent: false, pageText: "", xRobots: null } };
+  let response: Response | null = null;
   let checkedUrl = siteUrl;
   try {
     if (!response) {
@@ -139,24 +162,29 @@ export async function reviewSite(siteUrl: string, env: AppEnv, preferFirecrawl =
     }
   } catch { /* The page may block public fetching. */ }
   review.sourceUrl = checkedUrl;
-  if (!response && !preferFirecrawl) response = await firecrawlPage(siteUrl, env);
+  if (!response) response = await firecrawlPage(siteUrl, env);
   if (!response) return review;
+  review.evidence.xRobots = response.headers.get("x-robots-tag");
 
   let inTitle = false;
   let inH1 = false;
   const parser = new HTMLRewriter()
-    .on("title", { element() { inTitle = true; }, text(text) { if (inTitle) review.title = clean((review.title || "") + text.text, 180); if (text.lastInTextNode) inTitle = false; } })
-    .on("h1", { element() { if (!review.h1) inH1 = true; }, text(text) { if (inH1) review.h1 = clean((review.h1 || "") + text.text, 180); if (text.lastInTextNode) inH1 = false; } })
+    .on("title", { element(element) { inTitle = true; element.onEndTag(() => { inTitle = false; }); }, text(text) { if (inTitle) review.title = ((review.title || "") + text.text).slice(0, 180); } })
+    .on("h1", { element(element) { review.evidence.h1Count++; inH1 = review.evidence.h1Count === 1; element.onEndTag(() => { inH1 = false; }); }, text(text) { if (inH1) review.h1 = ((review.h1 || "") + text.text).slice(0, 180); } })
+    .on("script[type='application/ld+json']", { element() { review.evidence.jsonLdPresent = true; } })
+    .on("p,h1,h2,h3", { text(text) { if (review.evidence.pageText.length < 6000) review.evidence.pageText += text.text.slice(0, 6000 - review.evidence.pageText.length) + " "; } })
+    .on("a[href]", { element(element) { try { const url = new URL(element.getAttribute("href") || "", checkedUrl); if (canonicalSite(url.toString())?.domain === canonicalSite(checkedUrl)?.domain && review.evidence.internalLinks.length < 20 && !review.evidence.internalLinks.includes(url.toString())) review.evidence.internalLinks.push(url.toString()); } catch { /* Invalid anchor. */ } } })
     .on("meta", { element(element) { const name = element.getAttribute("name")?.toLowerCase(); if (name === "description") review.description = clean(element.getAttribute("content"), 300); if (name === "robots") review.robots = clean(element.getAttribute("content"), 120); } })
-    .on("link", { element(element) { if (element.getAttribute("rel")?.toLowerCase() === "canonical") review.canonical = clean(element.getAttribute("href"), 500); } });
+    .on("link", { element(element) { if (element.getAttribute("rel")?.toLowerCase().split(/\s+/).includes("canonical")) review.canonical = clean(element.getAttribute("href"), 500); } });
   try {
     await parser.transform(response).text();
     review.status = "ok";
     if (!review.title) review.issues.push("Page title is missing or could not be read.");
     if (!review.description) review.issues.push("Meta description is missing or could not be read.");
     if (!review.h1) review.issues.push("Main heading is missing or could not be read.");
-    if (!review.canonical) review.issues.push("Canonical URL is missing or could not be read.");
-    if (review.robots?.includes("noindex")) review.issues.push("This page asks search engines not to index it.");
+    if (!review.canonical) review.issues.push("No canonical URL was observed in the retrieved HTML; review whether this page needs one.");
+    if (review.evidence.h1Count > 1) review.issues.push("Multiple H1 headings were observed; review the page hierarchy.");
+    if ((review.robots || "").toLowerCase().includes("noindex") || (review.evidence.xRobots || "").toLowerCase().includes("noindex")) review.issues.push("This page asks search engines not to index it.");
   } catch {
     review.status = "unavailable";
     review.issues = [];
@@ -179,7 +207,7 @@ export function categoryFor(text: string): string {
 }
 
 export async function fingerprint(hit: SearchHit): Promise<string> {
-  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${hit.url.toLowerCase()}|${hit.title.toLowerCase()}`));
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalizeSource(hit.url)));
   return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
@@ -191,10 +219,10 @@ export async function refreshRoom(room: RoomRow, env: AppEnv, plan: Plan): Promi
     let added = 0;
     for (const hit of hits) {
       const site = canonicalSite(hit.url);
-      if (!site || site.domain === room.root_domain) continue;
+      if (!site) continue;
       const hash = await fingerprint(hit);
-      const result = await env.DB.prepare("INSERT OR IGNORE INTO findings (id,room_id,fingerprint,kind,title,summary,source_url,published_at,fetched_at,pose) VALUES (?,?,?,?,?,?,?,?,?,?)")
-        .bind(crypto.randomUUID(), room.id, hash, "mention", hit.title, hit.excerpt || "Open the source to read the original.", hit.url, hit.publishedAt, Date.now(), 0).run();
+      const result = await env.DB.prepare("INSERT OR IGNORE INTO findings (id,room_id,fingerprint,kind,title,summary,source_url,published_at,fetched_at,pose,provider,subject_domain) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
+        .bind(crypto.randomUUID(), room.id, hash, site.domain === room.root_domain ? "official" : "mention", hit.title, hit.excerpt || "Open the source to read the original.", hit.url, hit.publishedAt, Date.now(), 0, hit.provider, room.root_domain).run();
       if (result.meta.changes) added++;
     }
     const checkedAt = Date.now();
