@@ -8,7 +8,7 @@ export default function Share() {
   const [rooms, setRooms] = useState<PublicRoom[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => { void api<{ rooms: PublicRoom[] }>("/api/share").then(result => setRooms(result.rooms)).finally(() => setLoading(false)); }, []);
-  return <main className="container"><div className="page-top"><div><span className="eyebrow">Public rooms</span><h1>See what other markets are watching.</h1><p className="muted">These rooms are shared publicly by their owners.</p></div></div>
+  return <main className="container"><div className="page-top"><div><span className="eyebrow">Public rooms</span><h1>See what other markets are watching.</h1><p className="muted">These rooms are shared publicly by their owners.</p></div><Link className="button button-outline" to="/share/demo">View demo rooms <ArrowUpRight size={16} /></Link></div>
     {loading ? <p className="loading">Loading shared rooms…</p> : rooms.length ? <div className="share-grid">{rooms.map(room => <Link className="share-card" to={"/share/" + room.id} key={room.id}><span className="eyebrow">{room.category}</span><h3>{room.display_name}</h3><p>{room.root_domain}</p><span className="tag">Public room</span><ArrowUpRight size={17} /></Link>)}</div> : <div className="empty"><h3>No public rooms to show yet.</h3><p>Public rooms appear here when members add a website.</p></div>}
   </main>;
 }

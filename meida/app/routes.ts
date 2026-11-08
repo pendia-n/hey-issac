@@ -15,5 +15,6 @@ export default [
   route("rooms/new", "routes/new-room.tsx"),
   route("rooms/:id", "routes/room.tsx"),
   route("share", "routes/share.tsx"),
+  route("share/demo", "routes/share-demo.tsx"),
   route("share/:id", "routes/shared-room.tsx"),
 ] satisfies RouteConfig;

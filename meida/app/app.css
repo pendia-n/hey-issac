@@ -119,5 +119,16 @@ h2{font-size:2rem}
 [data-theme="dark"] .scene-loading span{background:rgba(25,35,30,.95);color:#e6ede9}
 .candidate-option{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}
 .room-overview{margin:0 0 22px;max-width:85ch;overflow-wrap:anywhere}.room-overview p{margin:8px 0}.candidate-option>label{min-width:0}.candidate-option span,.competitor-panel .list-row span,.evidence-item{min-width:0;overflow-wrap:anywhere}.evidence-item blockquote{margin:12px 0;padding:8px 14px;border-left:3px solid currentColor}.room-actions{flex-wrap:wrap}
+.business-overview{overflow-wrap:anywhere;margin:10px 0 12px}
+.business-overview p{margin:8px 0}
+.business-overview dl{margin:10px 0;font-size:.85rem}
+.business-overview dt{font-weight:700;margin-top:8px}
+.business-overview dd{margin:0}
+.competitor-entry{padding:14px 0;border-bottom:1px solid var(--line,#d8e1db);overflow-wrap:anywhere}
+.competitor-entry:last-of-type{border-bottom:0}
+.competitor-entry .icon-label svg{flex-shrink:0}
+.demo-heading{margin-top:22px}
+.demo-findings{margin-top:32px}
+@media(max-width:700px){.demo-heading{align-items:flex-start;flex-wrap:wrap}}
 .candidate-option>a{display:inline-flex;align-items:center;gap:3px;color:#246b59;font-size:.78rem;white-space:nowrap}
 [data-theme="dark"] .candidate-option>a{color:#80c9ac}

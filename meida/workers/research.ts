@@ -4,7 +4,7 @@ import { EXA_COSTS, hasProvider, providerPost, withProviderKey } from "./provide
 
 export interface Citation { title: string; url: string }
 export interface Candidate { domain: string; name: string; summary: string; sourceUrl: string; confidence: string }
-export interface BusinessProfile { name: string; category: string; summary: string; audience: string; businessModel: string; sourceUrl: string; checkedAt: number }
+export interface BusinessProfile { name: string; category: string; summary: string; audience: string; businessModel: string; sourceUrl: string; checkedAt: number; overlap?: string }
 export interface Advice { evidence: string; change: string; reason: string; wording: string }
 type ObjectData = Record<string, any>;
 const categories = ["guide", "painter", "musician", "chef", "farmer", "tailor", "gamer", "commercial"];
@@ -30,16 +30,21 @@ export async function exaAnswer(env: AppEnv, query: string, purpose: string, out
     return { value: result, cost: result.costDollars?.total };
   }, { purpose, estimate: EXA_COSTS.answer });
 }
-export async function businessProfile(url: string, env: AppEnv, plan: Plan, page?: SiteReview): Promise<BusinessProfile> {
+export async function businessProfile(url: string, env: AppEnv, plan: Plan, page?: SiteReview, comparedWith?: Pick<RoomRow, "display_name" | "submitted_url">): Promise<BusinessProfile> {
   const domain = canonicalSite(url)!.domain;
   if (hasProvider(env, "exa")) {
     try {
-      const result = await exaAnswer(env, "Review the business at " + url + ". Prefer this exact official domain and distinguish it from similarly named businesses. Return its name, a <=150-word overview, audience, business model, official source URL and one category from " + categories.join(", ") + ". Use commercial if none fits. Unknown fields must be empty strings. Retrieved page observations: " + JSON.stringify(page?.evidence || {}).slice(0, 6500), "overview", {
-        type: "object", required: ["name", "summary", "audience", "businessModel", "category", "sourceUrl"], properties: Object.fromEntries(["name", "summary", "audience", "businessModel", "category", "sourceUrl"].map(name => [name, { type: "string" }])),
+      const fields = ["name", "summary", "audience", "businessModel", "category", "sourceUrl"];
+      const comparison = comparedWith
+        ? " In overlap, explain how its products or customers overlap with " + JSON.stringify({ name: comparedWith.display_name, url: comparedWith.submitted_url }) + ". Use public evidence and leave overlap empty when unsupported."
+        : "";
+      if (comparedWith) fields.push("overlap");
+      const result = await exaAnswer(env, "Review the business at " + url + ". Prefer this exact official domain and distinguish it from similarly named businesses. Return its name, a <=150-word overview, audience, business model, official source URL and one category from " + categories.join(", ") + ". Use commercial if none fits. Unknown fields must be empty strings." + comparison + " Retrieved page observations: " + JSON.stringify(page?.evidence || {}).slice(0, 6500), comparedWith ? "competitor-profile" : "overview", {
+        type: "object", required: fields, properties: Object.fromEntries(fields.map(name => [name, { type: "string" }])),
       });
       const answer = object(result.answer);
       if (!text(answer.name) || !text(answer.summary) || canonicalSite(answer.sourceUrl)?.domain !== domain) throw new Error("Profile could not be verified.");
-      return { name: text(answer.name, 80), summary: text(answer.summary, 1600), audience: text(answer.audience), businessModel: text(answer.businessModel), category: categories.includes(answer.category) ? answer.category : "commercial", sourceUrl: answer.sourceUrl, checkedAt: Date.now() };
+      return { name: text(answer.name, 80), summary: text(answer.summary, 1600), audience: text(answer.audience), businessModel: text(answer.businessModel), category: categories.includes(answer.category) ? answer.category : "commercial", sourceUrl: answer.sourceUrl, checkedAt: Date.now(), ...(comparedWith ? { overlap: text(answer.overlap) } : {}) };
     } catch { /* Retrieve official evidence if synthesis is unavailable. */ }
   }
   const hits = await searchWeb(domain + " official products services about", env, plan, "overview");

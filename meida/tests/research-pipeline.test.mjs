@@ -117,6 +117,20 @@ test("business profiles use structured answers and require an official domain", 
   });
 });
 
+test("competitor profiles include overlap with the room's business", async () => {
+  const env = environment({ EXA_API_KEY_1: "offline" });
+  await withFetch(async (_url, options) => {
+    const body = JSON.parse(options.body);
+    assert.ok(body.outputSchema.properties.overlap);
+    assert.match(body.query, /https:\/\/example\.com/);
+    return json({ answer: { name: "Alternative", summary: "Sells a competing product", category: "commercial", audience: "Small businesses", businessModel: "Subscription", sourceUrl: "https://alternative.example/about", overlap: "Both sell to small businesses" }, costDollars: { total: 0.005 } });
+  }, async () => {
+    const result = await api.businessProfile("https://alternative.example", env, "solo", undefined, { display_name: "Example", submitted_url: "https://example.com" });
+    assert.equal(result.overlap, "Both sell to small businesses");
+    assert.equal(result.sourceUrl, "https://alternative.example/about");
+  });
+});
+
 test("explicit Agent investigation fixes effort to low and reads output.structured", async () => {
   const env = environment({ EXA_API_KEY_1: "offline" });
   await withFetch(async (url, options) => {

@@ -4,10 +4,11 @@ import { ArrowUpRight, Check, ExternalLink, Eye, EyeOff, MessageCircle, RefreshC
 import { api } from "../ui/api";
 import { useSession } from "../ui/session";
 import { ModelStage } from "../ui/model-stage";
+import { BusinessOverview, type Overview } from "../ui/business-overview";
 
 type Activity = "idle" | "working" | "responding";
 interface Finding { id: string; kind: string; title: string; summary: string; source_url: string; published_at: number | null; fetched_at: number; provider?: string; subject_domain?: string }
-interface Competitor { root_domain: string; name: string; summary?: string; source_url?: string; confidence?: string; last_checked_at?: number }
+interface Competitor { root_domain: string; name: string; summary?: string; source_url?: string; confidence?: string; last_checked_at?: number; profile?: Overview | null }
 interface Improvement { evidence: string; change: string; reason: string; wording: string }
 interface Review { status: string; checked_at: number; source_url: string; title: string | null; description: string | null; canonical: string | null; h1: string | null; robots: string | null; issues_json: string; advice_json?: string; evidence_json?: string }
 interface Message { role: string; content: string; citations_json?: string | null; created_at: number }
@@ -15,7 +16,7 @@ interface Room {
   id: string; rootDomain: string; displayName: string; category: string; submittedUrl: string;
   isPrivate: boolean; canHide: boolean; lastCheckedAt: number | null; searchStartedAt: number | null; searchFinishedAt: number | null; findings: Finding[];
   competitors: Competitor[]; review: Review | null; messages: Message[];
-  overview?: { summary: string; audience: string; businessModel: string; sourceUrl: string; checkedAt: number } | null;
+  overview?: Overview | null;
   reviewHistory?: Array<{ checked_at: number; review_json: string }>;
 }
 interface Candidate { domain: string; name: string; sourceUrl: string; summary?: string; confidence?: string }
@@ -32,6 +33,7 @@ export default function RoomPage() {
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [profileDomain, setProfileDomain] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [activity, setActivity] = useState<Activity>("idle");
   const [clientNow, setClientNow] = useState(Date.now());
@@ -105,6 +107,25 @@ export default function RoomPage() {
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : "Competitors could not be saved."); }
     finally { setBusy(false); }
   }
+  async function researchCompetitor(domain: string) {
+    if (!id || busy) return;
+    setBusy(true);
+    setProfileDomain(domain);
+    setMessage("");
+    try {
+      const { profile } = await api<{ profile: Overview }>("/api/rooms/" + id + "/competitor-profile", "POST", { domain });
+      setRoom(current => current && ({
+        ...current,
+        competitors: current.competitors.map(item => item.root_domain === domain ? { ...item, profile } : item),
+      }));
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "The competitor profile could not be completed.");
+    } finally {
+      setProfileDomain(null);
+      setBusy(false);
+    }
+  }
+
   async function sendChat(event: React.FormEvent) {
     event.preventDefault();
     if (!id || !chatText.trim()) return;
@@ -140,13 +161,26 @@ export default function RoomPage() {
       <div className="actions room-actions"><button className="button button-primary" onClick={() => void run("check")} disabled={busy}><RefreshCw size={16} />{busy ? "Checking…" : "Check now"}</button><button className="button button-outline" onClick={() => void run("review")} disabled={busy}>Check website</button><button className="button button-outline" onClick={() => void run("profile")} disabled={busy}>Refresh overview</button></div>
     </div>
     {message && <p className="message room-alert" role="status">{message}</p>}
-    {room.overview && <section className="room-overview"><p>{room.overview.summary}</p>{room.overview.audience && <p className="small-note"><strong>Audience:</strong> {room.overview.audience}</p>}{room.overview.businessModel && <p className="small-note"><strong>Business model:</strong> {room.overview.businessModel}</p>}<a className="fine-print text-link" href={room.overview.sourceUrl} target="_blank" rel="noreferrer">Source · {formatDate(room.overview.checkedAt)}</a></section>}
+    {room.overview && <section className="room-overview"><BusinessOverview profile={room.overview} /></section>}
     <div className="room-workspace">
       <div className="room-viewer-wrap"><ModelStage category={room.category} activity={stageActivity} update={marketUpdate} /></div>
       <aside className="panel competitor-panel">
         <div className="room-panel-heading"><h2>Competitors</h2><span className="tag">{room.competitors.length} added</span></div>
         <p className="small-note">These websites sit beside your market room. They do not appear in the 3D scene.</p>
-        {room.competitors.length > 0 && <div className="evidence">{room.competitors.map(item => <div className="list-row" key={item.root_domain}><span><strong>{item.name}</strong><br /><small>{item.root_domain}</small>{item.summary && <p className="small-note">{item.summary}</p>}{item.source_url && <a className="fine-print text-link" href={item.source_url} target="_blank" rel="noreferrer">Evidence · {item.confidence || "Unverified"}</a>}</span><a href={"https://" + item.root_domain} target="_blank" rel="noreferrer" aria-label={"Open " + item.root_domain}><ArrowUpRight size={16} /></a></div>)}</div>}
+        {room.competitors.map(item => <article className="competitor-entry" key={item.root_domain}>
+          <a className="icon-label" href={"https://" + item.root_domain} target="_blank" rel="noreferrer">
+            <strong>{item.name}</strong><ArrowUpRight size={15} aria-hidden="true" />
+          </a>
+          <small>{item.root_domain}</small>
+          {item.profile ? <BusinessOverview profile={item.profile} competitor /> : <>
+            {item.summary && <p className="small-note">{item.summary}</p>}
+            {item.source_url && <p><a className="fine-print text-link" href={item.source_url} target="_blank" rel="noreferrer">Evidence · {item.confidence || "Unverified"}</a></p>}
+          </>}
+          <button className="button button-outline button-compact" type="button" onClick={() => void researchCompetitor(item.root_domain)} disabled={busy}>
+            {item.profile ? <RefreshCw size={14} /> : <Search size={14} />}
+            {profileDomain === item.root_domain ? "Researching…" : item.profile ? "Refresh profile" : "Research profile"}
+          </button>
+        </article>)}
         {candidates && <div className="candidate-list">{candidates.map(item => <div className="candidate-option" key={item.domain}><label className="candidate check-row"><input type="checkbox" checked={selected.includes(item.domain)} onChange={event => setSelected(current => event.target.checked ? [...current, item.domain] : current.filter(value => value !== item.domain))} /><span><strong>{item.name}</strong><br />{item.domain}{item.summary && <p className="small-note">{item.summary}</p>}{item.confidence && <small>Evidence confidence: {item.confidence}</small>}</span></label><a href={item.sourceUrl} target="_blank" rel="noreferrer">Evidence <ArrowUpRight size={14} /></a></div>)}</div>}
         {candidates ? <div className="actions"><button className="button button-primary button-compact" onClick={() => void saveCompetitors()} disabled={busy}><Check size={15} />Save</button><button className="button button-outline button-compact" onClick={() => setCandidates(null)}>Cancel</button></div> : <button className="button button-outline button-compact" onClick={() => void discover()} disabled={busy}><Search size={15} />Find competitors</button>}
         {room.canHide && <><hr className="rule" /><div className="actions"><button className="button button-outline button-compact" onClick={() => void changePrivacy()} disabled={busy}>{room.isPrivate ? <><Eye size={15} />Make public</> : <><EyeOff size={15} />Make private</>}</button></div></>}

@@ -1,7 +1,7 @@
 import { currentUser } from "./auth";
 import { hasPaidAccess, subscriptionFor } from "./billing";
 import { canonicalSite, categoryFor, refreshRoom, reviewSite, searchConfigured, searchWeb, type SiteReview } from "./search";
-import { businessProfile, findCompetitors, reviewAdvice, exaAnswer, citationsFor, investigate, type Candidate } from "./research";
+import { businessProfile, findCompetitors, reviewAdvice, exaAnswer, citationsFor, investigate, type BusinessProfile, type Candidate } from "./research";
 import type { AppEnv, Plan, RoomRow, SubscriptionRow } from "./types";
 import { bodyObject, error, json, monthKey, PLANS } from "./types";
 
@@ -11,11 +11,11 @@ async function details(room: RoomRow, env: AppEnv, owner: boolean): Promise<Reco
   if (!owner) return base;
   const subscription = await env.DB.prepare("SELECT plan,status,current_period_end FROM subscriptions WHERE user_id=?").bind(room.owner_id).first<SubscriptionRow>();
   const canHide = subscription?.plan === "partner" && hasPaidAccess(subscription);
-  const competitors = await env.DB.prepare("SELECT root_domain,name,summary,source_url,confidence,last_checked_at FROM competitors WHERE room_id=? ORDER BY name").bind(room.id).all();
+  const competitors = await env.DB.prepare("SELECT root_domain,name,summary,source_url,confidence,last_checked_at,profile_json FROM competitors WHERE room_id=? ORDER BY name").bind(room.id).all<{ profile_json: string | null }>();
   const review = await env.DB.prepare("SELECT * FROM reviews WHERE room_id=?").bind(room.id).first();
   const messages = await env.DB.prepare("SELECT role,content,citations_json,created_at FROM conversations WHERE room_id=? AND user_id=? ORDER BY created_at DESC LIMIT 30").bind(room.id, room.owner_id).all();
   const history = await env.DB.prepare("SELECT checked_at,review_json FROM review_history WHERE room_id=? ORDER BY checked_at DESC LIMIT 3").bind(room.id).all();
-  return { ...base, overview: parseJson(room.overview_json, null), reviewHistory: history.results, submittedUrl: room.submitted_url, isPrivate: canHide && !!room.is_private, canHide, competitors: competitors.results, review, messages: messages.results.reverse() };
+  return { ...base, overview: parseJson(room.overview_json, null), reviewHistory: history.results, submittedUrl: room.submitted_url, isPrivate: canHide && !!room.is_private, canHide, competitors: competitors.results.map(({ profile_json, ...competitor }) => ({ ...competitor, profile: parseJson<BusinessProfile | null>(profile_json, null) })), review, messages: messages.results.reverse() };
 }
 
 async function ownerRoom(id: string, userId: string, env: AppEnv): Promise<RoomRow | null> {
@@ -178,7 +178,7 @@ export async function handleRooms(request: Request, path: string, env: AppEnv): 
     return json({ room: await details(room, env, true), candidates: [] }, 201);
   }
 
-  const match = path.match(/^\/api\/rooms\/([a-f0-9-]{36})(?:\/(delete|privacy|discover|competitors|check|review|profile|chat))?$/);
+  const match = path.match(/^\/api\/rooms\/([a-f0-9-]{36})(?:\/(delete|privacy|discover|competitors|competitor-profile|check|review|profile|chat))?$/);
   if (!match) return error("Not found.", 404);
   const room = await ownerRoom(match[1], user.id, env);
   if (!room) return error("Room not found.", 404);
@@ -207,17 +207,40 @@ export async function handleRooms(request: Request, path: string, env: AppEnv): 
     const domains = body.domains.map(value => canonicalSite(value)?.domain);
     if (domains.some(value => !value || value === room.root_domain) || new Set(domains).size !== domains.length) return error("Choose distinct public competitor websites.");
     const candidates = parseJson<Candidate[]>(room.candidates_json, []);
-    const existing = await env.DB.prepare("SELECT root_domain,name,summary,source_url,confidence,last_checked_at FROM competitors WHERE room_id=?").bind(room.id).all<{ root_domain: string; name: string; summary: string; source_url: string | null; confidence: string; last_checked_at: number | null }>();
+    const remove = domains.length
+      ? env.DB.prepare("DELETE FROM competitors WHERE room_id=? AND root_domain NOT IN (" + domains.map(() => "?").join(",") + ")").bind(room.id, ...domains)
+      : env.DB.prepare("DELETE FROM competitors WHERE room_id=?").bind(room.id);
     await env.DB.batch([
-      env.DB.prepare("DELETE FROM competitors WHERE room_id=?").bind(room.id),
+      remove,
       ...domains.map(domain => {
         const candidate = candidates.find(item => item.domain === domain);
-        const prior = existing.results.find(item => item.root_domain === domain);
-        return env.DB.prepare("INSERT INTO competitors(room_id,root_domain,name,created_at,summary,source_url,confidence,last_checked_at) VALUES (?,?,?,?,?,?,?,?)")
-          .bind(room.id, domain!, candidate?.name || prior?.name || domain!, Date.now(), candidate?.summary || prior?.summary || "", candidate?.sourceUrl || prior?.source_url || null, candidate?.confidence || prior?.confidence || "unverified", prior?.last_checked_at || null);
+        return env.DB.prepare("INSERT INTO competitors(room_id,root_domain,name,created_at,summary,source_url,confidence) VALUES (?,?,?,?,?,?,?) ON CONFLICT(room_id,root_domain) DO UPDATE SET name=excluded.name,summary=excluded.summary,source_url=excluded.source_url,confidence=excluded.confidence WHERE excluded.source_url IS NOT NULL")
+          .bind(room.id, domain!, candidate?.name || domain!, Date.now(), candidate?.summary || "", candidate?.sourceUrl || null, candidate?.confidence || "unverified");
       }),
     ]);
     return json({ ok: true });
+  }
+  if (action === "competitor-profile" && request.method === "POST") {
+    const body = await bodyObject(request);
+    const domain = typeof body?.domain === "string" ? body.domain : "";
+    const competitor = await env.DB.prepare("SELECT created_at FROM competitors WHERE room_id=? AND root_domain=?")
+      .bind(room.id, domain).first<{ created_at: number }>();
+    if (!competitor) return error("Select this competitor before researching its profile.", 404);
+    const kind = "competitor_profiles:" + room.id;
+    if (!await incrementUsage(user.id, kind, limits.competitors, env)) {
+      return error("This room's monthly competitor profile allowance has been used.", 429);
+    }
+    try {
+      const profile = await businessProfile("https://" + domain, env, subscription.plan, undefined, room);
+      const saved = await env.DB.prepare("UPDATE competitors SET profile_json=? WHERE room_id=? AND root_domain=? AND created_at=?")
+        .bind(JSON.stringify(profile), room.id, domain, competitor.created_at).run();
+      if (saved.meta.changes) return json({ profile });
+      await undoUsage(user.id, kind, env);
+      return error("This competitor was removed while its profile was being researched.", 409);
+    } catch {
+      await undoUsage(user.id, kind, env);
+      return error("The competitor profile could not be completed. Your allowance was not used.", 503);
+    }
   }
   if (action === "check" && request.method === "POST") {
     if (!await incrementUsage(user.id, "manual_checks", limits.manualChecks, env)) return error("Your check-now allowance is used for this month.", 429);
